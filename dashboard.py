@@ -1,150 +1,777 @@
 """
-Sentinel Council — Streamlit dashboard.
-Reads trades.csv and shows portfolio metrics, recent trades, and the most
-recent decision explanation per symbol. Auto-refreshes every 60 seconds.
-
+Sentinel Council — Trading Agent Dashboard
+Mission Control aesthetic: phosphor displays, monospace data, dark terminal.
 Run with: streamlit run dashboard.py
 """
 
+import html
+import json
 import re
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 
 TRADES_CSV = Path("trades.csv")
+PORTFOLIO_JSON = Path("data/portfolio.json")
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+BUY_THRESHOLD = 70.0
+SELL_THRESHOLD = 35.0
 REFRESH_SECONDS = 60
 
-DECISION_BADGE = {
-    "BUY": ":green[**BUY**]",
-    "SELL": ":red[**SELL**]",
-    "HOLD": ":gray[**HOLD**]",
+EXPLANATION_LINE_RE = re.compile(
+    r"^\s*-\s*(?P<skill>\w+) \((?P<weight>\d+)% weight, score (?P<score>\d+)\):\s*(?P<summary>.*)$"
+)
+DOMINANT_RE = re.compile(r"Dominant:\s*(\w+)")
+
+# ─── CSS ──────────────────────────────────────────────────────────
+
+CSS = """
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Chakra+Petch:ital,wght@0,300;0,400;0,600;0,700;1,300&family=Share+Tech+Mono&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500&display=swap');
+
+/* ── Base ── */
+[data-testid="stAppViewContainer"] {
+    background: #070b0f !important;
+    background-image:
+        radial-gradient(ellipse at 15% 10%, rgba(0,255,135,0.025) 0%, transparent 55%),
+        radial-gradient(ellipse at 85% 85%, rgba(77,158,255,0.02) 0%, transparent 55%) !important;
+}
+[data-testid="stHeader"] { background: transparent !important; border-bottom: none !important; }
+section[data-testid="stSidebar"] { display: none !important; }
+.block-container { padding-top: 2.5rem !important; padding-bottom: 4rem !important; max-width: 1400px !important; }
+footer { display: none !important; }
+*, *::before, *::after { box-sizing: border-box; }
+p, li, span, div { font-family: 'DM Sans', sans-serif !important; }
+
+/* ── Masthead ── */
+.sc-masthead {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    border-bottom: 1px solid rgba(0,255,135,0.15);
+    padding-bottom: 1.25rem;
+    margin-bottom: 2rem;
+}
+.sc-wordmark {
+    font-family: 'Chakra Petch', monospace !important;
+    font-size: 2.2rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: #dce8f5;
+    line-height: 1;
+    margin: 0;
+}
+.sc-wordmark em { color: #00ff87; font-style: normal; }
+.sc-tagline {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.62rem;
+    color: #2a3d52;
+    letter-spacing: 0.22em;
+    margin-top: 0.45rem;
+}
+.sc-live-block { text-align: right; }
+.sc-live {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.72rem;
+    color: #00ff87;
+    letter-spacing: 0.18em;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+.pulse-dot {
+    width: 7px; height: 7px;
+    background: #00ff87;
+    border-radius: 50%;
+    display: inline-block;
+    box-shadow: 0 0 7px #00ff87;
+    animation: pulse-anim 1.6s ease-in-out infinite;
+}
+@keyframes pulse-anim {
+    0%, 100% { opacity: 1; box-shadow: 0 0 7px #00ff87; }
+    50%       { opacity: 0.3; box-shadow: 0 0 2px #00ff87; }
+}
+.sc-clock {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.6rem;
+    color: #2a3d52;
+    letter-spacing: 0.12em;
+    margin-top: 0.3rem;
 }
 
-EXPLANATION_LINE_RE = re.compile(
-    r"^\s*-\s*(?P<skill>\w+) \((?P<weight>\d+)% weight, score (?P<score>\d+)\): (?P<summary>.*)$"
-)
+/* ── Section Labels ── */
+.sc-section {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.62rem;
+    letter-spacing: 0.28em;
+    color: #2a3d52;
+    text-transform: uppercase;
+    border-bottom: 1px solid #0c1620;
+    padding-bottom: 0.4rem;
+    margin: 2.25rem 0 1rem;
+}
 
-st.set_page_config(page_title="Sentinel Council", layout="wide")
-st.title("Sentinel Council — Trading Agent Dashboard")
-st.caption(
-    "Five independent analyses (macro, technical, sentiment, news, market-intel) are each "
-    "scored 0-100 and combined into one weighted confidence score. **BUY** at confidence >= 70, "
-    "**SELL** at confidence <= 35, otherwise **HOLD**. Trades below run against a simulated "
-    "$10,000 USDT portfolio using real Bitget prices — no real capital is at risk."
-)
+/* ── Metric Cards ── */
+.metric-row {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+.metric-card {
+    background: #0d1520;
+    border: 1px solid rgba(0,255,135,0.1);
+    border-radius: 3px;
+    padding: 1.1rem 1.4rem;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.25s;
+}
+.metric-card:hover { border-color: rgba(0,255,135,0.25); }
+.metric-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(0,255,135,0.45), transparent);
+}
+.metric-label {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.6rem;
+    color: #2a3d52;
+    letter-spacing: 0.2em;
+    margin-bottom: 0.55rem;
+}
+.metric-value {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 1.7rem;
+    color: #c8d8ea;
+    line-height: 1;
+    font-weight: 400;
+}
+.metric-value.pos { color: #00ff87; }
+.metric-value.neg { color: #ff4d4d; }
 
+/* ── Signal Grid ── */
+.signal-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.9rem;
+    margin-bottom: 0.5rem;
+}
+.signal-card {
+    background: #0d1520;
+    border: 1px solid rgba(0,255,135,0.1);
+    border-radius: 3px;
+    padding: 1.3rem 1.4rem 1.4rem;
+    transition: border-color 0.25s;
+}
+.signal-card:hover { border-color: rgba(0,255,135,0.22); }
+.signal-sym {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.62rem;
+    color: #2a3d52;
+    letter-spacing: 0.2em;
+    margin-bottom: 0.7rem;
+}
+.signal-sym em { color: #f5a623; font-style: normal; }
+.sig-buy  { font-family: 'Chakra Petch', monospace !important; font-size: 1.9rem; font-weight: 700; color: #00ff87; letter-spacing: 0.12em; text-shadow: 0 0 22px rgba(0,255,135,0.35); }
+.sig-sell { font-family: 'Chakra Petch', monospace !important; font-size: 1.9rem; font-weight: 700; color: #ff4d4d; letter-spacing: 0.12em; text-shadow: 0 0 22px rgba(255,77,77,0.35); }
+.sig-hold { font-family: 'Chakra Petch', monospace !important; font-size: 1.9rem; font-weight: 700; color: #2a3d52; letter-spacing: 0.12em; }
+.sig-conf {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.8rem;
+    margin-top: 0.2rem;
+    margin-bottom: 0.9rem;
+}
+.sig-dom {
+    display: inline-block;
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.58rem;
+    letter-spacing: 0.12em;
+    color: #f5a623;
+    border: 1px solid rgba(245,166,35,0.25);
+    border-radius: 2px;
+    padding: 0.1rem 0.4rem;
+    margin-bottom: 1rem;
+}
+
+/* ── Score Bars ── */
+.score-bars { display: flex; flex-direction: column; gap: 0.55rem; }
+.score-row  { display: flex; align-items: center; gap: 0.55rem; }
+.score-skill {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.58rem;
+    color: #2a3d52;
+    width: 72px;
+    letter-spacing: 0.08em;
+    flex-shrink: 0;
+}
+.score-track {
+    flex: 1;
+    height: 3px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 2px;
+    overflow: hidden;
+}
+.score-fill { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
+.score-num {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.68rem;
+    width: 22px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+/* ── Breakdown Bars (larger, in tab) ── */
+.bd-item { margin-bottom: 1.1rem; }
+.bd-header { display: flex; justify-content: space-between; margin-bottom: 0.28rem; }
+.bd-skill {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.62rem;
+    color: #2a3d52;
+    letter-spacing: 0.12em;
+}
+.bd-score {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.88rem;
+    font-weight: 600;
+}
+.bd-track {
+    height: 5px;
+    background: rgba(255,255,255,0.04);
+    border-radius: 3px;
+    overflow: hidden;
+}
+.bd-fill { height: 100%; border-radius: 3px; }
+.bd-weight {
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 0.62rem;
+    color: #2a3d52;
+    margin-top: 0.2rem;
+}
+
+/* ── Summary Rows ── */
+.summary-row {
+    padding: 0.7rem 1rem;
+    background: #0a1218;
+    border-radius: 3px;
+    margin-bottom: 0.45rem;
+    border-left: 2px solid;
+}
+.summary-tag {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.58rem;
+    letter-spacing: 0.12em;
+    margin-bottom: 0.25rem;
+}
+.summary-text {
+    font-family: 'DM Sans', sans-serif !important;
+    font-size: 0.8rem;
+    color: #5e7a94;
+}
+
+/* ── Audit Table ── */
+.audit-wrap { overflow-x: auto; }
+.audit-table { width: 100%; border-collapse: collapse; }
+.audit-table th {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.58rem;
+    color: #2a3d52;
+    letter-spacing: 0.18em;
+    text-align: left;
+    padding: 0.45rem 0.7rem;
+    border-bottom: 1px solid #0c1620;
+    white-space: nowrap;
+}
+.audit-table td {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.7rem;
+    color: #5e7a94;
+    padding: 0.45rem 0.7rem;
+    border-bottom: 1px solid rgba(255,255,255,0.025);
+    white-space: nowrap;
+}
+.audit-table tr:hover td { background: rgba(0,255,135,0.018); }
+.d-buy  { color: #00ff87 !important; font-weight: 600; }
+.d-sell { color: #ff4d4d !important; font-weight: 600; }
+.d-hold { color: #2a3d52 !important; }
+.ts-dim { color: #2a3d52 !important; font-size: 0.65rem !important; }
+
+/* ── Empty State ── */
+.sc-empty {
+    background: #0d1520;
+    border: 1px solid rgba(0,255,135,0.1);
+    border-radius: 3px;
+    padding: 3rem;
+    text-align: center;
+    font-family: 'Share Tech Mono', monospace;
+    font-size: 0.75rem;
+    color: #2a3d52;
+    letter-spacing: 0.12em;
+    line-height: 2;
+}
+.sc-empty code { color: #00ff87; background: none; font-family: inherit; }
+
+/* ── Footer ── */
+.sc-footer {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.58rem;
+    color: #1a2a38;
+    letter-spacing: 0.14em;
+    margin-top: 3rem;
+    padding-top: 1rem;
+    border-top: 1px solid #0c1620;
+    display: flex;
+    justify-content: space-between;
+}
+
+/* ── Streamlit overrides ── */
+div[data-testid="stTabs"] > div > div > button {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.68rem !important;
+    letter-spacing: 0.1em !important;
+    color: #2a3d52 !important;
+    background: transparent !important;
+}
+div[data-testid="stTabs"] > div > div > button[aria-selected="true"] {
+    color: #00ff87 !important;
+    border-bottom-color: #00ff87 !important;
+}
+div[data-testid="stDownloadButton"] > button {
+    font-family: 'Share Tech Mono', monospace !important;
+    font-size: 0.62rem !important;
+    letter-spacing: 0.12em !important;
+    background: transparent !important;
+    color: #2a3d52 !important;
+    border: 1px solid #1a2a38 !important;
+    border-radius: 2px !important;
+    padding: 0.35rem 0.9rem !important;
+}
+div[data-testid="stDownloadButton"] > button:hover {
+    color: #00ff87 !important;
+    border-color: rgba(0,255,135,0.3) !important;
+}
+div[data-testid="stVerticalBlock"] > div:has(> div[data-testid="stAltairChart"]) {
+    background: #070b0f;
+}
+</style>
+"""
+
+# ─── Data Helpers ─────────────────────────────────────────────────
 
 def load_trades() -> pd.DataFrame | None:
-    """Returns the trades DataFrame, or None if the CSV is missing/empty."""
     if not TRADES_CSV.exists():
         return None
     try:
         df = pd.read_csv(TRADES_CSV)
     except pd.errors.EmptyDataError:
         return None
-    if df.empty:
-        return None
-    return df.sort_values("timestamp").reset_index(drop=True)
+    return df.sort_values("timestamp").reset_index(drop=True) if not df.empty else None
 
 
 def compute_metrics(df: pd.DataFrame) -> dict:
-    """Derives balance/PnL/trade-count/win-rate purely from trades.csv.
-
-    trade_count = rows where a position was actually closed (CLOSE action).
-    win_rate: pnl is a portfolio-wide running total logged on every row, so
-    each CLOSE row's realized PnL is the delta from the previous row's
-    cumulative total — a positive delta is a win.
-    """
     latest = df.iloc[-1]
     closes = df[df["action"] == "CLOSE"]
     pnl_deltas = df["pnl"].diff().reindex(closes.index)
-    trade_count = len(closes)
-    win_count = int((pnl_deltas > 0).sum())
-    win_rate = round(win_count / trade_count * 100, 1) if trade_count else 0.0
+    tc = len(closes)
+    wc = int((pnl_deltas > 0).sum())
     return {
-        "balance": latest["balance"],
-        "total_pnl": latest["pnl"],
-        "trade_count": trade_count,
-        "win_rate": win_rate,
+        "balance": float(latest["balance"]),
+        "total_pnl": float(latest["pnl"]),
+        "trade_count": tc,
+        "win_rate": round(wc / tc * 100, 1) if tc else 0.0,
     }
 
 
-def parse_explanation(explanation: str) -> tuple[str, pd.DataFrame]:
-    """Splits the explanation text into a headline and a per-skill score table."""
+def parse_explanation(explanation: str) -> tuple[str, list[dict]]:
     lines = str(explanation).split("\n")
     headline = lines[0].strip()
     rows = []
     for line in lines[1:]:
         m = EXPLANATION_LINE_RE.match(line)
         if m:
-            rows.append(
-                {
-                    "Skill": m.group("skill"),
-                    "Weight": f"{m.group('weight')}%",
-                    "Score": int(m.group("score")),
-                    "Summary": m.group("summary"),
-                }
-            )
-    return headline, pd.DataFrame(rows)
+            rows.append({
+                "skill": m.group("skill"),
+                "weight": int(m.group("weight")),
+                "score": int(m.group("score")),
+                "summary": m.group("summary").strip(),
+            })
+    return headline, rows
 
+
+def dominant_skill(headline: str) -> str:
+    m = DOMINANT_RE.search(headline)
+    return m.group(1).upper() if m else "—"
+
+
+def load_open_positions() -> dict | None:
+    if not PORTFOLIO_JSON.exists():
+        return None
+    try:
+        with open(PORTFOLIO_JSON, encoding="utf-8") as f:
+            return json.load(f).get("open_positions", {})
+    except Exception:
+        return None
+
+
+# ─── Render Helpers ───────────────────────────────────────────────
+
+def score_color(score: int) -> str:
+    if score >= 60:
+        return "#00ff87"
+    if score < 40:
+        return "#ff4d4d"
+    return "#f5a623"
+
+
+def signal_cls(decision: str) -> str:
+    return {"BUY": "sig-buy", "SELL": "sig-sell"}.get(decision, "sig-hold")
+
+
+def decision_cls(decision: str) -> str:
+    return {"BUY": "d-buy", "SELL": "d-sell"}.get(decision, "d-hold")
+
+
+def render_score_bars(rows: list[dict]) -> str:
+    html_parts = []
+    for r in rows:
+        c = score_color(r["score"])
+        html_parts.append(f"""
+        <div class="score-row">
+            <span class="score-skill">{r['skill'].upper()}</span>
+            <div class="score-track">
+                <div class="score-fill" style="width:{r['score']}%;background:{c};box-shadow:0 0 5px {c}55;"></div>
+            </div>
+            <span class="score-num" style="color:{c}">{r['score']}</span>
+        </div>""")
+    return f'<div class="score-bars">{"".join(html_parts)}</div>'
+
+
+def render_signal_card(symbol: str, row: pd.Series) -> str:
+    decision = str(row.get("decision", "HOLD"))
+    confidence = float(row.get("confidence", 0))
+    headline, skill_rows = parse_explanation(str(row.get("explanation", "")))
+    dom = dominant_skill(headline)
+    conf_color = score_color(int(confidence))
+    bars = render_score_bars(skill_rows)
+    ts = str(row.get("timestamp", ""))[:16].replace("T", " ")
+    return f"""
+    <div class="signal-card">
+        <div class="signal-sym">◈ {symbol} &nbsp;<em>{ts}</em></div>
+        <div class="{signal_cls(decision)}">{decision}</div>
+        <div class="sig-conf" style="color:{conf_color}">{confidence:.1f}% confidence</div>
+        <div class="sig-dom">▲ {dom}</div>
+        {bars}
+    </div>"""
+
+
+def render_breakdown_bars(rows: list[dict]) -> str:
+    parts = []
+    for r in rows:
+        c = score_color(r["score"])
+        parts.append(f"""
+        <div class="bd-item">
+            <div class="bd-header">
+                <span class="bd-skill">{r['skill'].upper()}</span>
+                <span class="bd-score" style="color:{c}">{r['score']}</span>
+            </div>
+            <div class="bd-track">
+                <div class="bd-fill" style="width:{r['score']}%;background:{c};box-shadow:0 0 8px {c}55;"></div>
+            </div>
+            <div class="bd-weight">{r['weight']}% weight</div>
+        </div>""")
+    return "".join(parts)
+
+
+def render_summary_rows(rows: list[dict]) -> str:
+    parts = []
+    for r in rows:
+        c = score_color(r["score"])
+        safe_summary = html.escape(r["summary"])
+        parts.append(f"""
+        <div class="summary-row" style="border-left-color:{c}40">
+            <div class="summary-tag" style="color:{c}">{r['skill'].upper()} &middot; {r['weight']}% &middot; SCORE {r['score']}</div>
+            <div class="summary-text">{safe_summary}</div>
+        </div>""")
+    return "".join(parts)
+
+
+# ─── Page ─────────────────────────────────────────────────────────
+
+st.set_page_config(
+    page_title="Sentinel Council",
+    page_icon="◈",
+    layout="wide",
+    initial_sidebar_state="collapsed",
+)
+
+st.markdown(CSS, unsafe_allow_html=True)
+
+# ── Masthead ──────────────────────────────────────────────────────
+
+now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M UTC")
+st.markdown(f"""
+<div class="sc-masthead">
+    <div>
+        <div class="sc-wordmark">SENTINEL <em>COUNCIL</em></div>
+        <div class="sc-tagline">AUTONOMOUS TRADING AGENT &nbsp;·&nbsp; BITGET AI BASE CAMP HACKATHON S1 &nbsp;·&nbsp; TRACK 1</div>
+    </div>
+    <div class="sc-live-block">
+        <div class="sc-live"><span class="pulse-dot"></span> LIVE</div>
+        <div class="sc-clock">{now_utc}</div>
+    </div>
+</div>
+""", unsafe_allow_html=True)
 
 df = load_trades()
 
 if df is None:
-    st.info(
-        "No trades yet — trades.csv is missing or empty. "
-        "This dashboard will populate once sentinel.py has run at least one cycle."
-    )
+    st.markdown("""
+    <div class="sc-empty">
+        AWAITING FIRST CYCLE<br>
+        <span style="color:#2a3d52;font-size:0.6rem">trades.csv is missing or empty</span><br><br>
+        <code>python sentinel.py --once</code>
+    </div>
+    """, unsafe_allow_html=True)
 else:
-    metrics = compute_metrics(df)
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Balance", f"${metrics['balance']:,.2f}")
-    col2.metric("Total PnL", f"${metrics['total_pnl']:,.4f}")
-    col3.metric("Trade Count", metrics["trade_count"])
-    col4.metric("Win Rate", f"{metrics['win_rate']:.1f}%")
-    st.caption(
-        f"{len(df)} logged decisions, spanning {df['timestamp'].min()} to {df['timestamp'].max()}. "
-        "Data reflects whatever trades.csv was last committed/pushed — it is a snapshot, not a live "
-        "feed, unless this app is reading a CSV updated by a continuously-running sentinel.py."
-    )
+    # ── Portfolio Metrics ──────────────────────────────────────────
+    st.markdown('<div class="sc-section">PORTFOLIO STATUS</div>', unsafe_allow_html=True)
 
-    st.subheader("Latest Decision Per Symbol")
-    symbols = sorted(df["symbol"].unique())
-    tabs = st.tabs(symbols)
-    for symbol, tab in zip(symbols, tabs):
+    m = compute_metrics(df)
+    pnl_cls = "pos" if m["total_pnl"] >= 0 else "neg"
+    pnl_sign = "+" if m["total_pnl"] >= 0 else ""
+    balance_delta = m["balance"] - 10000.0
+    bal_cls = "pos" if balance_delta >= 0 else "neg"
+
+    st.markdown(f"""
+    <div class="metric-row">
+        <div class="metric-card">
+            <div class="metric-label">BALANCE (USDT)</div>
+            <div class="metric-value {bal_cls}">${m['balance']:,.2f}</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">TOTAL P&amp;L</div>
+            <div class="metric-value {pnl_cls}">{pnl_sign}${m['total_pnl']:,.4f}</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">CLOSED TRADES</div>
+            <div class="metric-value">{m['trade_count']}</div>
+        </div>
+        <div class="metric-card">
+            <div class="metric-label">WIN RATE</div>
+            <div class="metric-value">{m['win_rate']:.1f}%</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+
+    open_positions = load_open_positions()
+    if open_positions:
+        rows_html = ""
+        for sym, p in open_positions.items():
+            rows_html += f"""
+            <tr>
+                <td>{html.escape(p.get('symbol', sym))}</td>
+                <td>${float(p.get('size', 0)):.2f}</td>
+                <td>${float(p.get('entry_price', 0)):.4f}</td>
+                <td class="ts-dim">{html.escape(str(p.get('opened_at', ''))[:19].replace('T',' '))}</td>
+            </tr>"""
+        st.markdown(f"""
+        <div class="audit-wrap" style="margin-top:0.75rem">
+        <table class="audit-table">
+            <thead><tr><th>SYMBOL</th><th>SIZE</th><th>ENTRY PRICE</th><th>OPENED AT</th></tr></thead>
+            <tbody>{rows_html}</tbody>
+        </table></div>
+        """, unsafe_allow_html=True)
+
+    # ── Current Signals ────────────────────────────────────────────
+    st.markdown('<div class="sc-section">CURRENT SIGNALS</div>', unsafe_allow_html=True)
+
+    cards_html = ""
+    for symbol in SYMBOLS:
+        sym_df = df[df["symbol"] == symbol].sort_values("timestamp")
+        if sym_df.empty:
+            cards_html += f"""
+            <div class="signal-card">
+                <div class="signal-sym">◈ {symbol}</div>
+                <div class="sig-hold" style="font-size:1.1rem">AWAITING</div>
+            </div>"""
+        else:
+            cards_html += render_signal_card(symbol, sym_df.iloc[-1])
+
+    st.markdown(f'<div class="signal-grid">{cards_html}</div>', unsafe_allow_html=True)
+
+    # ── Skill Breakdown ────────────────────────────────────────────
+    st.markdown('<div class="sc-section">SKILL BREAKDOWN</div>', unsafe_allow_html=True)
+
+    syms_with_data = sorted(df["symbol"].unique())
+    tabs = st.tabs([f"◈ {s}" for s in syms_with_data])
+
+    for symbol, tab in zip(syms_with_data, tabs):
         with tab:
             sym_df = df[df["symbol"] == symbol].sort_values("timestamp")
             latest = sym_df.iloc[-1]
-            headline, breakdown = parse_explanation(latest["explanation"])
-            badge = DECISION_BADGE.get(latest["decision"], f"**{latest['decision']}**")
+            headline, skill_rows = parse_explanation(str(latest.get("explanation", "")))
+            decision = str(latest.get("decision", "HOLD"))
+            confidence = float(latest.get("confidence", 0))
+            conf_color = score_color(int(confidence))
 
-            st.markdown(f"### {symbol} — {badge} @ {latest['confidence']:.1f}% confidence")
-            st.write(headline)
+            st.markdown(f"""
+            <div style="font-family:'Share Tech Mono',monospace;font-size:0.68rem;
+                        color:#2a3d52;letter-spacing:0.1em;margin-bottom:1.1rem">
+                {decision} @ <span style="color:{conf_color}">{confidence:.1f}%</span>
+                &nbsp;·&nbsp; {html.escape(headline[:120])}
+            </div>
+            """, unsafe_allow_html=True)
 
-            if not breakdown.empty:
-                left, right = st.columns([2, 3])
+            if skill_rows:
+                left, right = st.columns([1, 2])
                 with left:
-                    st.bar_chart(breakdown.set_index("Skill")["Score"])
+                    st.markdown(render_breakdown_bars(skill_rows), unsafe_allow_html=True)
                 with right:
-                    st.dataframe(
-                        breakdown[["Skill", "Weight", "Score", "Summary"]],
-                        width="stretch",
-                        hide_index=True,
-                    )
+                    st.markdown(render_summary_rows(skill_rows), unsafe_allow_html=True)
 
-            if len(sym_df) > 1:
-                st.caption("Confidence over time")
-                trend = sym_df.set_index("timestamp")["confidence"]
-                st.line_chart(trend)
+    # ── Confidence Trend ───────────────────────────────────────────
+    st.markdown('<div class="sc-section">CONFIDENCE TREND</div>', unsafe_allow_html=True)
 
-    st.subheader("20 Most Recent Trades")
-    recent = df.sort_values("timestamp", ascending=False).head(20).copy()
-    recent["decision"] = recent["decision"].map(lambda d: DECISION_BADGE.get(d, d))
-    display_cols = ["timestamp", "symbol", "decision", "confidence", "action", "size", "balance", "pnl"]
-    st.dataframe(recent[display_cols], width="stretch", hide_index=True)
+    trend_df = df[["timestamp", "symbol", "confidence"]].copy()
+    trend_df["timestamp"] = pd.to_datetime(trend_df["timestamp"])
 
-st.caption(f"Auto-refreshing every {REFRESH_SECONDS} seconds.")
+    COLOR_MAP = {"BTCUSDT": "#f5a623", "ETHUSDT": "#4d9eff", "SOLUSDT": "#c084fc"}
+
+    lines = (
+        alt.Chart(trend_df)
+        .mark_line(point=alt.OverlayMarkDef(filled=True, size=35), strokeWidth=1.5)
+        .encode(
+            x=alt.X("timestamp:T", title=None, axis=alt.Axis(
+                labelColor="#2a3d52", gridColor="#0c1620", tickColor="#0c1620",
+                labelFont="Share Tech Mono", labelFontSize=9, domainColor="#0c1620",
+            )),
+            y=alt.Y("confidence:Q", title="CONFIDENCE %",
+                scale=alt.Scale(domain=[0, 100]),
+                axis=alt.Axis(
+                    labelColor="#2a3d52", gridColor="#0c1620", tickColor="#0c1620",
+                    labelFont="Share Tech Mono", labelFontSize=9, domainColor="#0c1620",
+                    titleColor="#2a3d52", titleFont="Share Tech Mono", titleFontSize=8,
+                )),
+            color=alt.Color("symbol:N",
+                scale=alt.Scale(
+                    domain=list(COLOR_MAP.keys()),
+                    range=list(COLOR_MAP.values()),
+                ),
+                legend=alt.Legend(
+                    labelColor="#5e7a94", titleColor="#2a3d52",
+                    labelFont="Share Tech Mono", labelFontSize=10,
+                    titleFont="Share Tech Mono", titleFontSize=9, title="SYMBOL",
+                    orient="top-right",
+                ),
+            ),
+            tooltip=[
+                alt.Tooltip("timestamp:T", title="Time"),
+                alt.Tooltip("symbol:N", title="Symbol"),
+                alt.Tooltip("confidence:Q", title="Confidence", format=".1f"),
+            ],
+        )
+    )
+
+    buy_rule = (
+        alt.Chart(pd.DataFrame({"y": [BUY_THRESHOLD]}))
+        .mark_rule(strokeDash=[5, 4], color="#00ff87", opacity=0.35, strokeWidth=1)
+        .encode(y="y:Q")
+    )
+    buy_text = (
+        alt.Chart(pd.DataFrame({"y": [BUY_THRESHOLD]}))
+        .mark_text(text="BUY", align="right", baseline="bottom", dx=-6, dy=-2,
+                   color="#00ff87", opacity=0.5, fontSize=9, font="Share Tech Mono")
+        .encode(y="y:Q")
+    )
+    sell_rule = (
+        alt.Chart(pd.DataFrame({"y": [SELL_THRESHOLD]}))
+        .mark_rule(strokeDash=[5, 4], color="#ff4d4d", opacity=0.35, strokeWidth=1)
+        .encode(y="y:Q")
+    )
+
+    chart = (
+        (lines + buy_rule + buy_text + sell_rule)
+        .properties(height=260, background="#070b0f",
+                    padding={"top": 16, "bottom": 16, "left": 16, "right": 16})
+        .configure_view(strokeWidth=0, fill="#070b0f")
+    )
+
+    st.altair_chart(chart, width="stretch")
+
+    # ── Decision Log ───────────────────────────────────────────────
+    st.markdown('<div class="sc-section">DECISION LOG</div>', unsafe_allow_html=True)
+
+    timestamps = pd.to_datetime(df["timestamp"])
+    hours_span = round((timestamps.max() - timestamps.min()).total_seconds() / 3600, 1)
+    decisions_count = len(df)
+    buy_count = int((df["decision"] == "BUY").sum())
+    sell_count = int((df["decision"] == "SELL").sum())
+    hold_count = int((df["decision"] == "HOLD").sum())
+
+    st.markdown(f"""
+    <div style="font-family:'Share Tech Mono',monospace;font-size:0.62rem;color:#2a3d52;
+                letter-spacing:0.12em;margin-bottom:0.75rem">
+        {decisions_count} DECISIONS &nbsp;·&nbsp; {hours_span}H SPAN &nbsp;·&nbsp;
+        <span style="color:#00ff87">{buy_count} BUY</span> &nbsp;
+        <span style="color:#ff4d4d">{sell_count} SELL</span> &nbsp;
+        <span style="color:#2a3d52">{hold_count} HOLD</span>
+    </div>
+    """, unsafe_allow_html=True)
+
+    recent = df.sort_values("timestamp", ascending=False).head(25)
+    rows_html = ""
+    for _, row in recent.iterrows():
+        dec = str(row.get("decision", "HOLD"))
+        ts = str(row.get("timestamp", ""))[:19].replace("T", " ")
+        rows_html += f"""
+        <tr>
+            <td class="ts-dim">{html.escape(ts)}</td>
+            <td>{html.escape(str(row.get('symbol','')))}</td>
+            <td class="{decision_cls(dec)}">{dec}</td>
+            <td style="color:#5e7a94">{float(row.get('confidence',0)):.1f}%</td>
+            <td style="color:#2a3d52">{html.escape(str(row.get('action','')))}</td>
+            <td style="color:#5e7a94">${float(row.get('balance',0)):,.2f}</td>
+            <td style="color:{'#00ff87' if float(row.get('pnl',0))>=0 else '#ff4d4d'}">{float(row.get('pnl',0)):+.4f}</td>
+        </tr>"""
+
+    st.markdown(f"""
+    <div class="audit-wrap">
+    <table class="audit-table">
+        <thead><tr>
+            <th>TIMESTAMP</th>
+            <th>SYMBOL</th>
+            <th>DECISION</th>
+            <th>CONFIDENCE</th>
+            <th>ACTION</th>
+            <th>BALANCE</th>
+            <th>P&amp;L</th>
+        </tr></thead>
+        <tbody>{rows_html}</tbody>
+    </table>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    st.download_button(
+        "↓  EXPORT AUDIT CSV",
+        data=TRADES_CSV.read_bytes(),
+        file_name="sentinel_council_audit.csv",
+        mime="text/csv",
+    )
+
+# ── Footer ─────────────────────────────────────────────────────────
+st.markdown(f"""
+<div class="sc-footer">
+    <span>SENTINEL COUNCIL &nbsp;·&nbsp; BITGET AI BASE CAMP S1 &nbsp;·&nbsp; TRACK 1: TRADING AGENT</span>
+    <span>AUTO-REFRESH ↺ {REFRESH_SECONDS}s</span>
+</div>
+""", unsafe_allow_html=True)
+
 time.sleep(REFRESH_SECONDS)
 st.rerun()
