@@ -3,3 +3,5 @@ requests
 mcp
 streamlit
 pandas
+altair
+numpy

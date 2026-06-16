@@ -2,23 +2,17 @@
 Sentinel Council — autonomous multi-skill AI trading agent.
 Bitget AI Base Camp Hackathon S1 — Track 1: Trading Agent.
 
-Perception -> Normalization -> Council -> Risk -> Execution -> Audit Trail.
+Perception -> Council -> Risk -> Execution -> Audit Trail.
 
-DEVIATION FROM ORIGINAL SPEC (recorded per 00_TASK.txt Decisions Log):
-The five "Bitget Agent Hub Skills" (macro-analyst, technical-analysis,
-sentiment-analyst, news-briefing, market-intel) do not exist as callable
-tools on bitget-mcp-server (confirmed via session.list_tools() — only
-spot/futures/account/margin/etc. trading tools are exposed) and the
-guessed REST endpoint (/agent-hub/v1/skills/{name}) returns a Cloudflare
-403, not real data. Per user direction, the five perspectives are instead
-synthesized from real Bitget futures market data (ticker, candles, funding
-rate, open interest) reached via MCP, turned into descriptive text, and
-scored by the same keyword-based normalizer the spec requires. This keeps
-the five-perspective architecture and the zero-LLM-call constraint while
-using only real Bitget data. news-briefing has no real data source on this
-API surface and is logged as genuinely unavailable every cycle (Rule A2
-exception), defaulting to a neutral score rather than being silently
-skipped.
+Five specialist perspectives scored 0-100 directly from real market data:
+  macro       (30%) — BTC 24h momentum + funding rate regime signal
+  technical   (30%) — RSI mean-reversion + EMA9/21 trend from Bitget klines
+  sentiment   (20%) — Fear & Greed contrarian index + per-symbol funding
+  news        (10%) — CoinDesk RSS headline keyword balance; neutral on error
+  intel       (10%) — Symbol-level 24h price momentum + open interest flow
+
+Scores are computed directly (no text intermediary, no keyword normalizer in
+the live path). The keyword normalizer is retained for --test mode only.
 
 Usage:
     python sentinel.py          -> continuous hourly loop
@@ -223,58 +217,30 @@ def _rsi(values: list[float], period: int = 14) -> float:
     return 100 - (100 / (1 + rs))
 
 
-# Highest-weight-first so picking the first N words gives the largest
-# possible score swing for a given N. Words are drawn from BULLISH_TERMS /
-# BEARISH_TERMS so the existing keyword normalizer scores them as designed.
-_GRADIENT_BULL_WORDS = ["bullish", "uptrend", "momentum", "rising", "positive", "strong", "higher", "gains"]
-_GRADIENT_BEAR_WORDS = ["bearish", "downtrend", "weakness", "falling", "negative", "weak", "lower", "losses"]
-
-
-def _graded_signal_text(signal: float, label: str) -> str:
-    """Translate a normalized signal in [-1, 1] into descriptive text whose
-    keyword mix scales with magnitude. The normalizer's score formula
-    (25 + bull/(bull+bear)*50) caps at 75 for ANY purely one-sided text
-    regardless of how many or how strong its keywords are — so a graded
-    score requires deliberately mixing in a calibrated amount of the
-    opposite side, not just picking stronger words for the dominant side."""
-    signal = max(-1.0, min(1.0, signal))
-    n_bull = max(0, min(8, round(4 + 4 * signal)))
-    n_bear = max(0, min(8, round(4 - 4 * signal)))
-    words = _GRADIENT_BULL_WORDS[:n_bull] + _GRADIENT_BEAR_WORDS[:n_bear]
-    if not words:
-        return f"{label}: neutral, no directional bias."
-    return f"{label}: " + ", ".join(words) + "."
-
-
-async def get_macro_signal(session: ClientSession) -> str:
-    """Crypto market-regime proxy from BTCUSDT — stands in for macro outlook."""
-    logger.info("Perception: macro (BTCUSDT regime proxy)...")
+async def get_macro_signal(session: ClientSession) -> dict[str, Any]:
+    """BTC 24h momentum + funding rate as a crypto regime signal (shared across symbols)."""
+    logger.info("Perception: macro (BTC regime)...")
     ticker = await _call_mcp_tool(session, "futures_get_ticker",
                                    {"symbol": "BTCUSDT", "productType": "USDT-FUTURES"})
     rows = ticker.get("data", [])
     if not rows:
-        return ""
+        return {"score": 50, "summary": "Macro data unavailable — neutral"}
     row = rows[0]
     change24h = float(row.get("change24h", 0))
     funding = float(row.get("fundingRate", 0))
 
-    if change24h > 0.02:
-        text = "BTC leading the broad crypto market higher with bullish momentum, uptrend, risk-on regime. "
-    elif change24h < -0.02:
-        text = "BTC leading a broad market selloff, bearish momentum, downtrend, risk-off regime. "
-    else:
-        text = "BTC range-bound, broad market regime neutral, mixed sentiment. "
-
-    if funding > 0:
-        text += "Positive funding across majors signals a modest bullish lean in market-wide positioning."
-    elif funding < 0:
-        text += "Negative funding across majors signals a modest bearish lean in market-wide positioning."
-    else:
-        text += "Flat funding across majors signals balanced positioning."
-    return text
+    # 24h price move: +/-3% = full signal; funding: +/-0.05% = full signal
+    s_change = max(-1.0, min(1.0, change24h / 0.03))
+    s_funding = max(-1.0, min(1.0, funding / 0.0005))
+    signal = max(-1.0, min(1.0, 0.6 * s_change + 0.4 * s_funding))
+    score = max(20, min(80, int(50 + signal * 25)))
+    direction = "bullish" if score > 55 else "bearish" if score < 45 else "neutral"
+    summary = f"BTC 24h {change24h * 100:+.2f}%, funding {funding * 100:.4f}% — regime {direction}"
+    return {"score": score, "summary": summary}
 
 
-async def get_technical_signal(session: ClientSession, symbol: str) -> str:
+async def get_technical_signal(session: ClientSession, symbol: str) -> dict[str, Any]:
+    """RSI(14) mean-reversion + EMA9/EMA21 trend from 50x1h candles."""
     logger.info("Perception: technical-analysis [%s]...", symbol)
     candles = await _call_mcp_tool(session, "futures_get_candles", {
         "symbol": symbol, "productType": "USDT-FUTURES",
@@ -282,69 +248,112 @@ async def get_technical_signal(session: ClientSession, symbol: str) -> str:
     })
     rows = candles.get("data", [])
     if len(rows) < 21:
-        return ""
+        return {"score": 50, "summary": "Insufficient candle data — neutral"}
     rows = sorted(rows, key=lambda r: int(r[0]))
     closes = [float(r[4]) for r in rows]
-    highs = [float(r[2]) for r in rows]
-    lows = [float(r[3]) for r in rows]
 
     ema9, ema21 = _ema(closes, 9), _ema(closes, 21)
     rsi = _rsi(closes, 14)
-    price = closes[-1]
-    recent_high, recent_low = max(highs[-20:]), min(lows[-20:])
 
-    # Trend signal: EMA9-vs-EMA21 gap as a % of price, scaled so a +/-2%
-    # gap is a full +/-1 signal (typical hourly-chart separation).
+    # RSI: oversold (<40) -> bullish; overbought (>60) -> bearish
+    rsi_score = max(25, min(75, int(50 + (50 - rsi) * 0.4)))
+    # EMA gap: +/-2% of price = full signal
     ema_gap_pct = (ema9 - ema21) / ema21 if ema21 else 0.0
     s_trend = max(-1.0, min(1.0, ema_gap_pct / 0.02))
+    trend_score = max(25, min(75, int(50 + s_trend * 25)))
 
-    # RSI signal: mean-reversion framing (matches the original semantics —
-    # high RSI = overbought/bearish-leaning, low RSI = oversold/bullish-leaning).
-    s_rsi = (50.0 - rsi) / 50.0
-
-    signal = max(-1.0, min(1.0, 0.5 * s_trend + 0.5 * s_rsi))
-    text = _graded_signal_text(signal, "Technical momentum")
-    # Informational only — deliberately keyword-free so it doesn't skew the
-    # calibrated bull/bear ratio computed above.
-    text += f" EMA9/EMA21 gap {ema_gap_pct * 100:.2f}%, RSI {rsi:.1f}."
-    if price >= recent_high * 0.995:
-        text += f" Price near the recent 20h high (${recent_high:.2f})."
-    elif price <= recent_low * 1.005:
-        text += f" Price near the recent 20h low (${recent_low:.2f})."
-    return text
+    score = max(20, min(80, int(0.5 * rsi_score + 0.5 * trend_score)))
+    trend_label = "uptrend" if ema9 > ema21 else "downtrend"
+    summary = f"RSI {rsi:.1f}, EMA9/21 {trend_label} (gap {ema_gap_pct * 100:+.2f}%)"
+    return {"score": score, "summary": summary}
 
 
-async def get_sentiment_signal(session: ClientSession, symbol: str) -> str:
+async def get_sentiment_signal(session: ClientSession, symbol: str) -> dict[str, Any]:
+    """Contrarian Fear & Greed index + per-symbol funding rate positioning."""
     logger.info("Perception: sentiment-analyst [%s]...", symbol)
+
+    fg_value = 50
+    try:
+        fg_resp = requests.get("https://api.alternative.me/fng/?limit=1", timeout=6)
+        fg_value = int(fg_resp.json()["data"][0]["value"])
+    except Exception as exc:
+        logger.warning("Fear & Greed API unavailable: %s", exc)
+
+    funding = 0.0
     funding_data = await _call_mcp_tool(session, "futures_get_funding_rate",
                                          {"symbol": symbol, "productType": "USDT-FUTURES"})
     rates = funding_data.get("data", {}).get("currentFundRate", [])
-    if not rates:
-        return ""
-    funding = float(rates[0].get("fundingRate", 0))
+    if rates:
+        funding = float(rates[0].get("fundingRate", 0))
 
-    # Bitget caps funding at +/-0.003 (0.3%); real-world values are usually
-    # far smaller. Scale so +/-0.0005 (0.05%) — a meaningfully crowded
-    # funding rate in practice — maps to a full +/-1 signal.
-    signal = max(-1.0, min(1.0, funding / 0.0005))
-    text = _graded_signal_text(signal, "Funding sentiment")
-    # Informational only — keyword-free, doesn't affect the score above.
-    text += f" Funding rate {funding * 100:.4f}%."
-    return text
+    # Extreme fear (fg=0) -> contrarian buy -> score 75; extreme greed (fg=100) -> caution -> score 25
+    fg_score = max(20, min(80, int(75 - fg_value * 0.5)))
+    # Positive funding = crowded longs = bearish contrarian pressure
+    s_funding = max(-1.0, min(1.0, -funding / 0.0005))
+    funding_score = max(35, min(65, int(50 + s_funding * 15)))
 
-
-def get_news_signal() -> str:
-    """No real news data source exists on this Bitget API surface.
-    Logged every cycle per Rule A2's exception clause — never silently skipped."""
-    logger.warning(
-        "Perception: news-briefing UNAVAILABLE — sentiment (funding rate) and "
-        "market-intel (open interest) are compensating with real positioning data. "
-        "Defaulting news score to neutral (50)."
+    score = max(20, min(80, int(0.7 * fg_score + 0.3 * funding_score)))
+    fg_label = (
+        "Extreme Fear" if fg_value < 25 else "Fear" if fg_value < 45 else
+        "Neutral" if fg_value < 55 else "Greed" if fg_value < 75 else "Extreme Greed"
     )
-    return ""
+    summary = f"F&G {fg_value}/100 ({fg_label}), funding {funding * 100:.4f}%"
+    return {"score": score, "summary": summary}
 
 
-async def get_market_intel_signal(session: ClientSession, symbol: str) -> str:
+_NEWS_FEEDS = [
+    "https://cointelegraph.com/rss",
+    "https://feeds.feedburner.com/CoinDesk",
+    "https://cryptobriefing.com/feed/",
+    "https://decrypt.co/feed",
+]
+
+_NEWS_BULL = [
+    "rally", "soar", "surge", "rebound", "bullish", "accumulation",
+    "buy", "etf", "adoption", "tops", "rises", "gains", "all-time",
+    "recovery", "institutional", "inflow", "whale", "accumulate", "breakout",
+]
+_NEWS_BEAR = [
+    "crash", "drop", "fall", "bear", "trap", "slump", "concern",
+    "warning", "skeptic", "decline", "risk", "plunge", "bottom",
+    "crashing", "stall", "liquidat", "outflow", "sell-off", "breakdown",
+]
+
+
+async def get_news_signal() -> dict[str, Any]:
+    """Multi-source crypto news sentiment from CoinTelegraph, CoinDesk, Decrypt, CryptoBriefing."""
+    logger.info("Perception: news-briefing...")
+
+    def _fetch(url: str) -> str:
+        try:
+            return requests.get(
+                url, headers={"User-Agent": "SentinelCouncil/1.0"}, timeout=8,
+            ).text
+        except Exception:
+            return ""
+
+    texts = await asyncio.gather(*[asyncio.to_thread(_fetch, u) for u in _NEWS_FEEDS])
+
+    titles: list[str] = []
+    for text in texts:
+        if not text:
+            continue
+        raw = re.findall(r"<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>", text, re.DOTALL)
+        titles.extend(t.lower().strip() for t in raw[1:11])  # skip channel title, take 10
+
+    if not titles:
+        return {"score": 50, "summary": "News data unavailable — neutral"}
+
+    combined = " ".join(titles)
+    bull = sum(combined.count(w) for w in _NEWS_BULL)
+    bear = sum(combined.count(w) for w in _NEWS_BEAR)
+    total = bull + bear
+    score = max(25, min(75, 50 if total == 0 else int(25 + bull / total * 50)))
+    return {"score": score, "summary": f"{len(titles)} headlines — {bull} bullish / {bear} bearish"}
+
+
+async def get_market_intel_signal(session: ClientSession, symbol: str) -> dict[str, Any]:
+    """Symbol-level 24h price momentum + open interest as institutional flow proxy."""
     logger.info("Perception: market-intel [%s]...", symbol)
     ticker = await _call_mcp_tool(session, "futures_get_ticker",
                                    {"symbol": symbol, "productType": "USDT-FUTURES"})
@@ -352,32 +361,36 @@ async def get_market_intel_signal(session: ClientSession, symbol: str) -> str:
                                {"symbol": symbol, "productType": "USDT-FUTURES"})
     rows = ticker.get("data", [])
     oi_rows = oi.get("data", {}).get("openInterestList", [])
-    if not rows or not oi_rows:
-        return ""
+    if not rows:
+        return {"score": 50, "summary": "Market intel data unavailable — neutral"}
     change24h = float(rows[0].get("change24h", 0))
-    oi_size = float(oi_rows[0].get("size", 0))
+    oi_size = float(oi_rows[0].get("size", 0)) if oi_rows else 0.0
 
-    # 24h price move as a proxy for institutional flow direction; +/-3%
-    # maps to a full +/-1 signal (a notable daily move for majors).
-    signal = max(-1.0, min(1.0, change24h / 0.03))
-    text = _graded_signal_text(signal, "Market positioning")
-    # Informational only — keyword-free, doesn't affect the score above.
-    text += f" 24h change {change24h * 100:.2f}%, open interest near {oi_size:.0f} contracts."
-    return text
+    # 24h price move: +/-3% = full signal
+    s_change = max(-1.0, min(1.0, change24h / 0.03))
+    score = max(20, min(80, int(50 + s_change * 25)))
+    flow_label = "accumulating" if score > 55 else "distributing" if score < 45 else "neutral flow"
+    summary = (f"{symbol} 24h {change24h * 100:+.2f}% — {flow_label}"
+               + (f", OI {oi_size:.0f}" if oi_size else ""))
+    return {"score": score, "summary": summary}
 
 
-async def run_perception(session: ClientSession, symbol: str, macro_text: str) -> dict[str, dict[str, Any]]:
-    technical_text = await get_technical_signal(session, symbol)
-    sentiment_text = await get_sentiment_signal(session, symbol)
-    news_text = get_news_signal()
-    intel_text = await get_market_intel_signal(session, symbol)
+async def run_perception(
+    session: ClientSession,
+    symbol: str,
+    macro_result: dict[str, Any],
+    news_result: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    technical_result = await get_technical_signal(session, symbol)
+    sentiment_result = await get_sentiment_signal(session, symbol)
+    intel_result = await get_market_intel_signal(session, symbol)
 
     perception = {
-        "macro": normalize_skill_output(macro_text),
-        "technical": normalize_skill_output(technical_text),
-        "sentiment": normalize_skill_output(sentiment_text),
-        "news": normalize_skill_output(news_text),
-        "intel": normalize_skill_output(intel_text),
+        "macro": macro_result,
+        "technical": technical_result,
+        "sentiment": sentiment_result,
+        "news": news_result,
+        "intel": intel_result,
     }
     logger.info(
         "Perception [%s] -> macro:%d technical:%d sentiment:%d news:%d intel:%d",
@@ -612,13 +625,14 @@ async def run_cycle(portfolio: SimPortfolio) -> None:
         async with stdio_client(_mcp_server_params()) as (read, write):
             async with ClientSession(read, write) as session:
                 await session.initialize()
-                macro_text = await get_macro_signal(session)
+                macro_result = await get_macro_signal(session)
+                news_result = await get_news_signal()
 
                 for symbol in Config.SYMBOLS:
                     logger.info("=" * 60)
                     logger.info("CYCLE START — %s", symbol)
                     try:
-                        perception = await run_perception(session, symbol, macro_text)
+                        perception = await run_perception(session, symbol, macro_result, news_result)
                         scores = {k: v["score"] for k, v in perception.items()}
                         summaries = {k: v["summary"] for k, v in perception.items()}
 
