@@ -1,0 +1,371 @@
+═══════════════════════════════════════════════════════════════════════
+SENTINEL COUNCIL — IMPLEMENTATION PLAN (PHASED)
+Bitget AI Base Camp Hackathon S1 — Track 1: Trading Agent
+Deadline: June 25, 2026
+Builder: Tommy (CryptoZephyr) — solo
+═══════════════════════════════════════════════════════════════════════
+
+───────────────────────────────────────────────────────────────────────
+PHASE 0 — ENVIRONMENT & PROJECT SETUP
+Est. time: 1–2 hours
+───────────────────────────────────────────────────────────────────────
+
+Goal: Everything installed, folder created, keys confirmed working.
+
+Steps:
+  0.1  Create project folder: sentinel-council/
+  0.2  Create subfolders: logs/, data/
+  0.3  Create virtual environment and activate it
+  0.4  Install packages: pip install python-dotenv requests mcp streamlit pandas
+  0.5  Create .env with BITGET_API_KEY, BITGET_SECRET_KEY, BITGET_PASSPHRASE
+  0.6  Create .gitignore (exclude .env, __pycache__, logs/, data/)
+  0.7  Create requirements.txt
+  0.8  Confirm Node.js installed: node --version
+  0.9  Confirm MCP server launches: npx -y bitget-mcp-server --help
+  0.10 Create public GitHub repo: CryptoZephyr/sentinel-council
+
+Done when:
+  - Virtual environment activates without error
+  - pip list shows all 4 packages
+  - node --version returns v18 or higher
+  - .env file has all 3 credentials filled in
+
+Files produced this phase:
+  .env
+  .gitignore
+  requirements.txt
+
+───────────────────────────────────────────────────────────────────────
+PHASE 1 — MCP SKILL CONNECTION (CRITICAL PATH)
+Est. time: 2–3 hours
+───────────────────────────────────────────────────────────────────────
+
+Goal: Python can call Bitget Skills via MCP and receive real text.
+
+Steps:
+  1.1  Write test_mcp.py — minimal async script that calls one Skill
+  1.2  Run test_mcp.py and confirm a text response appears
+  1.3  If connection fails: check env vars, MCP server version,
+       consult github.com/BitgetLimited/agent_hub
+  1.4  Write the full call_skill() async function in sentinel.py
+  1.5  Test all 5 skill names:
+         macro-analyst
+         technical-analysis
+         sentiment-analyst
+         news-briefing
+         market-intel
+  1.6  Confirm each returns non-empty text
+
+Done when:
+  - All 5 Skills return text (not empty string)
+  - No uncaught exceptions from call_skill()
+  - Errors are logged, not raised
+
+This phase is the highest-risk phase.
+Do not proceed to Phase 2 until Skills are confirmed working.
+
+Files produced this phase:
+  test_mcp.py (temporary test file, not part of final submission)
+  sentinel.py (skeleton with call_skill only)
+
+───────────────────────────────────────────────────────────────────────
+PHASE 2 — NORMALIZATION LAYER
+Est. time: 1–2 hours
+───────────────────────────────────────────────────────────────────────
+
+Goal: Raw Skill text → {score: int, summary: str} reliably.
+
+Steps:
+  2.1  Write normalize_skill_output() in sentinel.py
+  2.2  Write the --test CLI mode with 5+ hardcoded test cases:
+         Case 1: strongly bullish text     → expect score > 65
+         Case 2: strongly bearish text     → expect score < 40
+         Case 3: neutral text              → expect score ~50
+         Case 4: text with SIGNAL_SCORE:72 → expect score = 72
+         Case 5: empty string              → expect score = 50
+  2.3  Run: python sentinel.py --test
+  2.4  All cases must print PASS
+
+Done when:
+  - python sentinel.py --test → all 5+ cases PASS
+  - No case crashes or returns a score outside 0–100
+  - The self-scoring path (SIGNAL_SCORE:) works correctly
+
+Files updated this phase:
+  sentinel.py (normalize_skill_output added, --test mode added)
+
+───────────────────────────────────────────────────────────────────────
+PHASE 3 — PRICE FEED VERIFICATION
+Est. time: 30 minutes
+───────────────────────────────────────────────────────────────────────
+
+Goal: Confirm Bitget REST price API returns real prices.
+
+Steps:
+  3.1  Write a quick test (can be in Python REPL or a scratch file):
+         import requests
+         r = requests.get(
+             "https://api.bitget.com/api/v2/mix/market/ticker"
+             "?symbol=BTCUSDT&productType=USDT-FUTURES"
+         )
+         print(r.json())
+  3.2  Confirm "lastPr" key exists in data[0]
+  3.3  Confirm price is a parseable float
+  3.4  Write SimPortfolio.get_price() in sentinel.py
+  3.5  Test for all 3 symbols: BTCUSDT, ETHUSDT, SOLUSDT
+
+Done when:
+  - get_price("BTCUSDT") returns a non-zero float
+  - get_price("ETHUSDT") returns a non-zero float
+  - get_price("SOLUSDT") returns a non-zero float
+  - Returns 0.0 (not crash) on bad symbol
+
+Files updated this phase:
+  sentinel.py (SimPortfolio.get_price added)
+
+───────────────────────────────────────────────────────────────────────
+PHASE 4 — COUNCIL ENGINE + RISK ENGINE
+Est. time: 1–2 hours
+───────────────────────────────────────────────────────────────────────
+
+Goal: Given scores from 5 Skills, produce a BUY/SELL/HOLD decision
+      and a safe position size.
+
+Steps:
+  4.1  Write run_council(scores, summaries) in sentinel.py
+  4.2  Write calculate_position() in sentinel.py
+  4.3  Quick manual test in Python REPL:
+         test_scores = {
+             "macro": 80, "technical": 75,
+             "sentiment": 70, "news": 60, "intel": 65
+         }
+         test_summaries = {k: "test summary" for k in test_scores}
+         result = run_council(test_scores, test_summaries)
+         print(result)  # should be BUY, ~73.5 confidence
+  4.4  Test risk engine edge cases:
+         - BUY with position already open → HOLD
+         - SELL with no position          → HOLD
+         - BUY at 90% confidence          → OPEN_LONG, 2% size
+
+Done when:
+  - run_council returns correct decision for all threshold cases
+  - calculate_position returns correct action for all edge cases
+  - Explanation string is human-readable, not just a number
+
+Files updated this phase:
+  sentinel.py (run_council, calculate_position added)
+
+───────────────────────────────────────────────────────────────────────
+PHASE 5 — SIMULATED PORTFOLIO + EXECUTION
+Est. time: 1–2 hours
+───────────────────────────────────────────────────────────────────────
+
+Goal: Portfolio opens, tracks, and closes positions with real prices.
+
+Steps:
+  5.1  Write full SimPortfolio class in sentinel.py
+  5.2  Write SimPortfolio.open_long()
+  5.3  Write SimPortfolio.close_position()
+  5.4  Write SimPortfolio.execute()
+  5.5  Write SimPortfolio.summary()
+  5.6  Manual test:
+         p = SimPortfolio()
+         p.open_long("BTCUSDT", 100.0)
+         print(p.open_positions)   # should show BTCUSDT position
+         print(p.balance)          # should be 9900.0
+         p.close_position("BTCUSDT")
+         print(p.trades)           # should show one closed trade with PnL
+         print(p.total_pnl)        # should be non-zero
+
+Done when:
+  - open_long reduces balance correctly
+  - close_position calculates PnL using real prices
+  - summary() returns all expected fields
+  - No crash if get_price returns 0.0
+
+Files updated this phase:
+  sentinel.py (SimPortfolio complete)
+
+───────────────────────────────────────────────────────────────────────
+PHASE 6 — AUDIT TRAIL (CSV LOGGING)
+Est. time: 1 hour
+───────────────────────────────────────────────────────────────────────
+
+Goal: Every decision is written to trades.csv with correct fields.
+
+Steps:
+  6.1  Write CSV init logic (create file + header if not exists)
+  6.2  Write the row-append logic inside run_cycle()
+  6.3  Confirm CSV fields:
+         timestamp, symbol, decision, confidence,
+         action, size, balance, pnl
+  6.4  Run one cycle manually and open trades.csv
+  6.5  Confirm row is readable and all fields populated
+
+Done when:
+  - trades.csv created automatically on first run
+  - Each row has all 8 fields with no empty values
+  - PnL field shows running total, not just current trade PnL
+  - File appends correctly (does not overwrite) on subsequent runs
+
+Files updated this phase:
+  sentinel.py (CSV logic inside run_cycle)
+
+───────────────────────────────────────────────────────────────────────
+PHASE 7 — FULL ASYNC CYCLE + MAIN LOOP
+Est. time: 1–2 hours
+───────────────────────────────────────────────────────────────────────
+
+Goal: Full end-to-end cycle runs for all 3 symbols autonomously.
+
+Steps:
+  7.1  Write run_cycle(portfolio) — the full async orchestrator
+  7.2  Confirm asyncio.gather is used for concurrent Skill calls
+  7.3  Write main_loop() with the while True sleep cycle
+  7.4  Write run_once() for --once mode
+  7.5  Wire up argparse for all three CLI modes
+  7.6  Run: python sentinel.py --once
+  7.7  Verify output:
+         - Terminal shows cycle logs for all 3 symbols
+         - trades.csv has 3 new rows (one per symbol)
+         - sentinel.log has entries
+         - No uncaught exceptions
+
+Done when:
+  - python sentinel.py --once completes without crashing
+  - 3 rows appear in trades.csv
+  - sentinel.log shows all skill calls logged
+  - Portfolio summary prints after --once
+
+Files updated this phase:
+  sentinel.py (run_cycle, main_loop, run_once, argparse all complete)
+
+───────────────────────────────────────────────────────────────────────
+PHASE 8 — DASHBOARD
+Est. time: 2–3 hours
+───────────────────────────────────────────────────────────────────────
+
+Goal: Streamlit dashboard judges can view showing live decisions.
+
+Steps:
+  8.1  Create dashboard.py
+  8.2  Implement CSV reader (handle missing file gracefully)
+  8.3  Show top metrics: balance, PnL, trade count, win rate
+  8.4  Show table of 20 most recent trades
+  8.5  Add auto-refresh (60 second loop using st.rerun + time.sleep)
+  8.6  Run locally: streamlit run dashboard.py
+  8.7  Verify metrics show correct values from trades.csv
+  8.8  Test with empty CSV — should show friendly message, not crash
+
+Done when:
+  - streamlit run dashboard.py opens without error
+  - Metrics match what is in trades.csv
+  - Empty CSV shows friendly message
+  - Page auto-refreshes every 60 seconds
+
+Files produced this phase:
+  dashboard.py
+
+───────────────────────────────────────────────────────────────────────
+PHASE 9 — LOG ACCUMULATION (START EARLY)
+Est. time: Passive — runs in background
+───────────────────────────────────────────────────────────────────────
+
+Goal: Accumulate 20+ rows in trades.csv before submission.
+      This is the verifiable evidence judges check.
+
+Steps:
+  9.1  Start the main loop: python sentinel.py
+  9.2  Leave it running in a CMD window — do not close it
+  9.3  Check after 3 hours:
+         python -c "
+         import pandas as pd
+         df = pd.read_csv('trades.csv')
+         print(f'Rows: {len(df)}')
+         print(df['decision'].value_counts())
+         "
+  9.4  Target: 20+ rows by submission day
+  9.5  Include trades.csv in the GitHub repo for judges
+
+Done when:
+  - trades.csv has 20+ rows
+  - Decisions are varied (not all BUY or all HOLD)
+  - Timestamps span multiple hours or days
+
+───────────────────────────────────────────────────────────────────────
+PHASE 10 — PUBLIC DEPLOYMENT
+Est. time: 1–2 hours
+───────────────────────────────────────────────────────────────────────
+
+Goal: Dashboard accessible via public URL for judges.
+
+Steps:
+  10.1 Push code to GitHub (exclude .env)
+  10.2 Add trades.csv to repo (this is the evidence file)
+  10.3 Sign up at share.streamlit.io with GitHub account
+  10.4 Deploy dashboard.py from sentinel-council repo
+  10.5 Add Bitget credentials in Streamlit Cloud secrets settings
+  10.6 Get public URL (format: username-sentinel-council.streamlit.app)
+  10.7 Test URL from incognito browser on different device
+  10.8 Note: dashboard reads trades.csv from repo
+       If live Skill calls don't work on cloud, the log history
+       still shows as evidence. Record demo video locally.
+
+Done when:
+  - Public URL loads dashboard without error
+  - Decision log table shows from trades.csv
+  - URL accessible without login from any browser
+
+───────────────────────────────────────────────────────────────────────
+PHASE 11 — SUBMISSION
+Est. time: 2–3 hours
+───────────────────────────────────────────────────────────────────────
+
+Goal: Complete and submit all required materials before June 25.
+
+Steps:
+  11.1 Write README.md with: what it does, install, configure, run
+  11.2 Record demo video (optional but recommended, max 3 min):
+         Show Run Analysis Now → Skills loading → Decision → Logs
+  11.3 Prepare 200-word project description (see PROJECT_DESCRIPTION.txt)
+  11.4 Collect submission links:
+         - Public dashboard URL
+         - GitHub repo URL
+         - X post links (repost + project post)
+  11.5 Fill in the Bitget submission form (Track 1)
+  11.6 Submit before midnight June 25 UTC+8
+  11.7 Screenshot submission confirmation
+
+Done when:
+  - Submission form filled and submitted
+  - Confirmation received
+  - Screenshot saved
+
+───────────────────────────────────────────────────────────────────────
+PHASE SUMMARY TABLE
+───────────────────────────────────────────────────────────────────────
+
+Phase   Name                        Est. Time   Risk Level
+─────   ──────────────────────────  ─────────   ──────────
+0       Environment Setup           1–2 hrs     Low
+1       MCP Skill Connection        2–3 hrs     HIGH
+2       Normalization Layer         1–2 hrs     Low
+3       Price Feed Verification     30 min      Low
+4       Council + Risk Engines      1–2 hrs     Low
+5       Simulated Portfolio         1–2 hrs     Low
+6       Audit Trail (CSV)           1 hr        Low
+7       Full Async Cycle + Loop     1–2 hrs     Medium
+8       Dashboard                   2–3 hrs     Low
+9       Log Accumulation            Passive     Low
+10      Public Deployment           1–2 hrs     Medium
+11      Submission                  2–3 hrs     Low
+
+Total active build time: ~15–22 hours
+Realistic across 10 days as solo builder: very achievable
+
+Critical path: Phase 1 → Phase 2 → Phase 7 → Phase 9
+Everything else is parallel or downstream.
+
+═══════════════════════════════════════════════════════════════════════
+END OF IMPLEMENTATION PLAN
+═══════════════════════════════════════════════════════════════════════

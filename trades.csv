@@ -1,0 +1,37 @@
+timestamp,symbol,decision,confidence,action,size,balance,pnl,explanation
+2026-06-16T11:40:27.622349+00:00,BTCUSDT,HOLD,57.8,HOLD,0.0,10000.0,0.0,"HOLD signal at 57.8% confidence (12.2 points below BUY threshold). Dominant: macro.
+  - macro (30% weight, score 75): BTC range-bound, broad market regime neutral, mixed sentiment.
+  - technical (30% weight, score 52): Technical momentum: bullish, uptrend, momentum, rising, bearish, downtrend, weakness, falling.
+  - sentiment (20% weight, score 49): Funding sentiment: bullish, uptrend, momentum, rising, bearish, downtrend, weakness, falling.
+  - news (10% weight, score 50): No data
+  - intel (10% weight, score 49): Market positioning: bullish, uptrend, momentum, rising, bearish, downtrend, weakness, falling."
+2026-06-16T11:40:30.298410+00:00,ETHUSDT,HOLD,60.2,HOLD,0.0,10000.0,0.0,"HOLD signal at 60.2% confidence (9.8 points below BUY threshold). Dominant: macro.
+  - macro (30% weight, score 75): BTC range-bound, broad market regime neutral, mixed sentiment.
+  - technical (30% weight, score 55): Technical momentum: bullish, uptrend, momentum, rising, positive, bearish, downtrend, weakness.
+  - sentiment (20% weight, score 52): Funding sentiment: bullish, uptrend, momentum, rising, positive, bearish, downtrend, weakness.
+  - news (10% weight, score 50): No data
+  - intel (10% weight, score 58): Market positioning: bullish, uptrend, momentum, rising, positive, strong, bearish, downtrend."
+2026-06-16T11:40:32.862588+00:00,SOLUSDT,HOLD,60.3,HOLD,0.0,10000.0,0.0,"HOLD signal at 60.3% confidence (9.7 points below BUY threshold). Dominant: macro.
+  - macro (30% weight, score 75): BTC range-bound, broad market regime neutral, mixed sentiment.
+  - technical (30% weight, score 55): Technical momentum: bullish, uptrend, momentum, rising, positive, bearish, downtrend, weakness.
+  - sentiment (20% weight, score 49): Funding sentiment: bullish, uptrend, momentum, rising, bearish, downtrend, weakness, falling.
+  - news (10% weight, score 50): No data
+  - intel (10% weight, score 65): Market positioning: bullish, uptrend, momentum, rising, positive, strong, higher, bearish."
+2026-06-16T11:41:00.629366+00:00,BTCUSDT,HOLD,57.8,HOLD,0.0,10000.0,0.0,"HOLD signal at 57.8% confidence (12.2 points below BUY threshold). Dominant: macro.
+  - macro (30% weight, score 75): BTC range-bound, broad market regime neutral, mixed sentiment.
+  - technical (30% weight, score 52): Technical momentum: bullish, uptrend, momentum, rising, bearish, downtrend, weakness, falling.
+  - sentiment (20% weight, score 49): Funding sentiment: bullish, uptrend, momentum, rising, bearish, downtrend, weakness, falling.
+  - news (10% weight, score 50): No data
+  - intel (10% weight, score 49): Market positioning: bullish, uptrend, momentum, rising, bearish, downtrend, weakness, falling."
+2026-06-16T11:41:03.444630+00:00,ETHUSDT,HOLD,60.2,HOLD,0.0,10000.0,0.0,"HOLD signal at 60.2% confidence (9.8 points below BUY threshold). Dominant: macro.
+  - macro (30% weight, score 75): BTC range-bound, broad market regime neutral, mixed sentiment.
+  - technical (30% weight, score 55): Technical momentum: bullish, uptrend, momentum, rising, positive, bearish, downtrend, weakness.
+  - sentiment (20% weight, score 52): Funding sentiment: bullish, uptrend, momentum, rising, positive, bearish, downtrend, weakness.
+  - news (10% weight, score 50): No data
+  - intel (10% weight, score 58): Market positioning: bullish, uptrend, momentum, rising, positive, strong, bearish, downtrend."
+2026-06-16T11:41:05.833854+00:00,SOLUSDT,HOLD,60.3,HOLD,0.0,10000.0,0.0,"HOLD signal at 60.3% confidence (9.7 points below BUY threshold). Dominant: macro.
+  - macro (30% weight, score 75): BTC range-bound, broad market regime neutral, mixed sentiment.
+  - technical (30% weight, score 55): Technical momentum: bullish, uptrend, momentum, rising, positive, bearish, downtrend, weakness.
+  - sentiment (20% weight, score 49): Funding sentiment: bullish, uptrend, momentum, rising, bearish, downtrend, weakness, falling.
+  - news (10% weight, score 50): No data
+  - intel (10% weight, score 65): Market positioning: bullish, uptrend, momentum, rising, positive, strong, higher, bearish."

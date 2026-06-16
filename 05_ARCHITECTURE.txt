@@ -1,0 +1,276 @@
+═══════════════════════════════════════════════════════════════════════
+SENTINEL COUNCIL — ARCHITECTURE
+Bitget AI Base Camp Hackathon S1 — Track 1: Trading Agent
+═══════════════════════════════════════════════════════════════════════
+
+───────────────────────────────────────────────────────────────────────
+FULL SYSTEM DIAGRAM
+───────────────────────────────────────────────────────────────────────
+
+                    ┌─────────────────────────┐
+                    │    CLI ENTRY POINT      │
+                    │  python sentinel.py     │
+                    │  --once / --test / loop │
+                    └────────────┬────────────┘
+                                 │
+                                 ▼
+                    ┌─────────────────────────┐
+                    │      MAIN LOOP          │
+                    │  asyncio — every hour   │
+                    │  loops over 3 symbols   │
+                    └────────────┬────────────┘
+                                 │
+                    ┌────────────▼────────────┐
+                    │      RUN CYCLE          │
+                    │  per symbol, per hour   │
+                    └────────────┬────────────┘
+                                 │
+          ┌──────────────────────▼──────────────────────┐
+          │              PERCEPTION LAYER               │
+          │         (asyncio.gather — concurrent)       │
+          │                                             │
+          │  ┌───────────┐   ┌───────────┐             │
+          │  │  macro-   │   │technical- │             │
+          │  │  analyst  │   │ analysis  │             │
+          │  │  Skill    │   │  Skill    │             │
+          │  └─────┬─────┘   └─────┬─────┘             │
+          │        │               │                   │
+          │  ┌───────────┐   ┌───────────┐             │
+          │  │sentiment- │   │  news-    │             │
+          │  │  analyst  │   │ briefing  │             │
+          │  │  Skill    │   │  Skill    │             │
+          │  └─────┬─────┘   └─────┬─────┘             │
+          │        │               │                   │
+          │        └──────┬────────┘                   │
+          │               │                            │
+          │  ┌───────────┐│                            │
+          │  │ market-   ││                            │
+          │  │  intel    ││                            │
+          │  │  Skill    ││                            │
+          │  └─────┬─────┘│                            │
+          │        └───────┘                           │
+          │                                             │
+          │  All calls via: npx -y bitget-mcp-server   │
+          │  Transport: MCP stdio protocol              │
+          └──────────────────┬──────────────────────────┘
+                             │  raw text (str) × 5
+                             ▼
+          ┌──────────────────────────────────────────────┐
+          │           NORMALIZATION LAYER                │
+          │                                              │
+          │  normalize_skill_output(text) → {score, sum} │
+          │                                              │
+          │  Priority 1: parse SIGNAL_SCORE: N           │
+          │  Priority 2: keyword scoring                 │
+          │              bullish terms vs bearish terms  │
+          │  Priority 3: default score = 50 (neutral)   │
+          │                                              │
+          │  Output per skill:                           │
+          │    { "score": int 0-100, "summary": str }   │
+          │                                              │
+          │  Zero API calls. Zero cost. Never crashes.   │
+          └──────────────────┬───────────────────────────┘
+                             │  5 × {score, summary}
+                             ▼
+          ┌──────────────────────────────────────────────┐
+          │              COUNCIL ENGINE                  │
+          │                                              │
+          │  run_council(scores, summaries) → decision   │
+          │                                              │
+          │  confidence =                                │
+          │    macro     × 0.30                          │
+          │    technical × 0.30                          │
+          │    sentiment × 0.20                          │
+          │    news      × 0.10                          │
+          │    intel     × 0.10                          │
+          │                                              │
+          │  confidence ≥ 75  →  BUY                    │
+          │  confidence ≤ 35  →  SELL                   │
+          │  otherwise        →  HOLD                   │
+          │                                              │
+          │  Output:                                     │
+          │    { decision, confidence, dominant,         │
+          │      explanation }                           │
+          └──────────────────┬───────────────────────────┘
+                             │
+                             ▼
+          ┌──────────────────────────────────────────────┐
+          │               RISK ENGINE                    │
+          │                                              │
+          │  calculate_position(...) → action + size     │
+          │                                              │
+          │  HOLD  → no trade                            │
+          │  SELL  → CLOSE existing position             │
+          │  BUY   → OPEN_LONG with sized position       │
+          │                                              │
+          │  Sizing:                                     │
+          │    conf 75–84: 1% of balance                 │
+          │    conf 85+:   2% of balance                 │
+          │                                              │
+          │  Hard limits:                                │
+          │    max 1 position per asset                  │
+          │    max 3 concurrent positions                │
+          │    no pyramiding                             │
+          └──────────────────┬───────────────────────────┘
+                             │
+                             ▼
+          ┌──────────────────────────────────────────────┐
+          │           EXECUTION ENGINE                   │
+          │           (SimPortfolio class)               │
+          │                                              │
+          │  open_long(symbol, size):                    │
+          │    fetch real price from Bitget REST API     │
+          │    deduct size from sim balance              │
+          │    record position with entry price          │
+          │                                              │
+          │  close_position(symbol):                     │
+          │    fetch real exit price                     │
+          │    calculate PnL against entry               │
+          │    update balance and running PnL            │
+          │                                              │
+          │  Price feed:                                 │
+          │    GET /api/v2/mix/market/ticker             │
+          │    ?symbol={symbol}&productType=USDT-FUTURES │
+          └──────────────────┬───────────────────────────┘
+                             │
+                             ▼
+          ┌──────────────────────────────────────────────┐
+          │               AUDIT TRAIL                    │
+          │                                              │
+          │  trades.csv — one row per decision           │
+          │    Fields: timestamp, symbol, decision,      │
+          │    confidence, action, size, balance, pnl    │
+          │                                              │
+          │  sentinel.log — full runtime log             │
+          │    Every step at INFO level                  │
+          │    Errors at ERROR level                     │
+          │                                              │
+          │  This is the verifiable evidence             │
+          │  required by the hackathon handbook.         │
+          └──────────────────┬───────────────────────────┘
+                             │
+                             ▼
+          ┌──────────────────────────────────────────────┐
+          │               DASHBOARD                      │
+          │           (dashboard.py — Streamlit)         │
+          │                                              │
+          │  Reads trades.csv                            │
+          │  Shows: balance, PnL, trade count, win rate  │
+          │  Shows: 20 most recent trades table          │
+          │  Auto-refreshes every 60 seconds             │
+          │  Hosted on Streamlit Community Cloud         │
+          │  Public URL for judges                       │
+          └──────────────────────────────────────────────┘
+
+───────────────────────────────────────────────────────────────────────
+DATA FLOW (SIMPLIFIED)
+───────────────────────────────────────────────────────────────────────
+
+INPUT:
+  Market conditions (read by Bitget Skills via MCP)
+  Real-time prices (read from Bitget REST API)
+
+PROCESSING:
+  Raw Skill text
+    → normalize → score (0–100)
+    → council   → decision + confidence
+    → risk      → action + size
+    → execute   → position open/close
+
+OUTPUT:
+  trades.csv  (audit trail, submission evidence)
+  sentinel.log (runtime record)
+  dashboard   (judge-facing visual interface)
+
+───────────────────────────────────────────────────────────────────────
+FILE STRUCTURE
+───────────────────────────────────────────────────────────────────────
+
+sentinel-council/
+├── sentinel.py         ALL engine logic in one file:
+│                         Config class
+│                         call_skill() — MCP caller
+│                         normalize_skill_output() — keyword scorer
+│                         run_council() — decision engine
+│                         calculate_position() — risk engine
+│                         SimPortfolio class — execution engine
+│                         run_cycle() — async orchestrator
+│                         main_loop() — continuous loop
+│                         run_once() — single cycle
+│                         run_normalizer_test() — self-test
+│                         argparse entry point
+│
+├── dashboard.py        Streamlit dashboard
+│                         Reads trades.csv
+│                         Shows metrics + recent trades table
+│                         Auto-refreshes every 60s
+│
+├── requirements.txt    python-dotenv, requests, mcp, streamlit
+├── .env                BITGET_API_KEY, BITGET_SECRET_KEY, PASSPHRASE
+├── .gitignore          excludes .env, __pycache__, logs/, data/
+├── README.md           how to install, configure, run
+│
+├── trades.csv          ONE ROW PER DECISION
+│                       This file is the evidence for judges.
+│                       Committed to GitHub.
+│
+└── sentinel.log        Runtime log (not committed)
+
+───────────────────────────────────────────────────────────────────────
+TRANSPORT LAYER — HOW MCP WORKS IN THIS PROJECT
+───────────────────────────────────────────────────────────────────────
+
+The Bitget MCP server runs as a child process:
+  command: npx -y bitget-mcp-server
+  transport: stdio (stdin/stdout)
+  auth: env vars passed to the child process
+
+call_skill() does:
+  1. Spawn the npx process via StdioServerParameters
+  2. Open stdio_client context manager
+  3. Create mcp.ClientSession
+  4. Call session.initialize()
+  5. Call session.call_tool(skill_name, {"query": query})
+  6. Read result.content[0].text
+  7. Close context (automatic via context manager)
+
+This happens once per Skill call. The MCP process is not persistent.
+asyncio.gather() runs all 5 Skill calls concurrently per symbol,
+reducing the 5-sequential-call cost to approximately the time of
+the slowest single call.
+
+───────────────────────────────────────────────────────────────────────
+CONCURRENCY MODEL
+───────────────────────────────────────────────────────────────────────
+
+sentinel.py is fully async (asyncio).
+Skills are called concurrently per symbol:
+  asyncio.gather(
+      call_skill("macro-analyst",      macro_query),
+      call_skill("technical-analysis", tech_query),
+      call_skill("sentiment-analyst",  sent_query),
+      call_skill("news-briefing",      news_query),
+      call_skill("market-intel",       intel_query),
+  )
+
+Symbols are processed sequentially (one after another).
+This is intentional — sequential symbol processing is simpler
+and avoids MCP server contention from 15 concurrent calls.
+
+───────────────────────────────────────────────────────────────────────
+JUDGING CRITERIA MAPPING
+───────────────────────────────────────────────────────────────────────
+
+Handbook criteria         Sentinel Council component
+────────────────────────  ──────────────────────────────────────────
+Perception                5 Bitget Skills via MCP Server
+Decision                  Council Engine (weighted confidence)
+Risk Management           Risk Engine (position sizing + hard limits)
+Execution                 SimPortfolio (sim trades + real prices)
+Verifiable evidence       trades.csv (committed to repo)
+Real and runnable demo    Streamlit dashboard (public URL)
+Bitget AI modules used    All 5 Skills + MCP Server + REST API
+
+═══════════════════════════════════════════════════════════════════════
+END OF ARCHITECTURE
+═══════════════════════════════════════════════════════════════════════

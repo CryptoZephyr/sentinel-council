@@ -1,0 +1,86 @@
+═══════════════════════════════════════════════════════════════════════
+SENTINEL COUNCIL — PROJECT DESCRIPTION
+Bitget AI Base Camp Hackathon S1 — Track 1: Trading Agent
+Submission-ready. Under 200 words.
+═══════════════════════════════════════════════════════════════════════
+
+Sentinel Council is an autonomous multi-skill AI trading agent built
+on Bitget Agent Hub that synthesizes five independent market
+perspectives before executing any trade.
+
+Problem: Most trading agents rely on a single signal source.
+Single-source agents fail when market regimes shift because no
+signal is universally reliable. Sentinel Council solves this by
+combining five specialist analysts into a collective decision —
+the same approach professional trading desks use, fully autonomous.
+
+Strategy loop:
+
+PERCEPTION — All five Bitget Agent Hub Skills are called every hour:
+macro-analyst, technical-analysis, sentiment-analyst, news-briefing,
+and market-intel. Each returns structured market intelligence for
+BTCUSDT, ETHUSDT, and SOLUSDT.
+
+DECISION — A Council Engine combines Skill outputs into a weighted
+confidence score (0–100). Above 75 = BUY. Below 35 = SELL.
+Between = HOLD.
+
+RISK MANAGEMENT — A Risk Engine sizes positions by confidence band.
+75–84%: 1% of balance. 85–100%: 2% of balance. Hard limits: max
+one position per asset, max three concurrent positions.
+
+EXECUTION — Simulated trades execute against real Bitget price feeds.
+Every decision and raw Skill output is logged in a transparent
+audit trail.
+
+Bitget modules used:
+macro-analyst · technical-analysis · sentiment-analyst ·
+news-briefing · market-intel · Bitget Agent Hub MCP Server ·
+Bitget REST API (price feeds)
+
+Word count: ~185 words.
+
+═══════════════════════════════════════════════════════════════════════
+WHAT TO COPY INTO THE SUBMISSION FORM
+═══════════════════════════════════════════════════════════════════════
+
+Copy everything between the dashed lines below:
+
+──────────────────────────────────────────────────────────────────────
+Sentinel Council is an autonomous multi-skill AI trading agent built
+on Bitget Agent Hub that synthesizes five independent market
+perspectives before executing any trade.
+
+Problem: Most trading agents rely on a single signal source.
+Single-source agents fail when market regimes shift because no
+signal is universally reliable. Sentinel Council solves this by
+combining five specialist analysts into a collective decision —
+the same approach professional trading desks use, fully autonomous.
+
+Strategy loop:
+
+PERCEPTION — All five Bitget Agent Hub Skills are called every hour:
+macro-analyst, technical-analysis, sentiment-analyst, news-briefing,
+and market-intel. Each returns structured market intelligence for
+BTCUSDT, ETHUSDT, and SOLUSDT.
+
+DECISION — A Council Engine combines Skill outputs into a weighted
+confidence score (0–100). Above 75 = BUY. Below 35 = SELL.
+Between = HOLD.
+
+RISK MANAGEMENT — A Risk Engine sizes positions by confidence band.
+75–84%: 1% of balance. 85–100%: 2% of balance. Hard limits: max
+one position per asset, max three concurrent positions.
+
+EXECUTION — Simulated trades execute against real Bitget price feeds.
+Every decision and raw Skill output is logged in a transparent
+audit trail.
+
+Bitget modules used: macro-analyst · technical-analysis ·
+sentiment-analyst · news-briefing · market-intel ·
+Bitget Agent Hub MCP Server · Bitget REST API
+──────────────────────────────────────────────────────────────────────
+
+═══════════════════════════════════════════════════════════════════════
+END OF PROJECT DESCRIPTION
+═══════════════════════════════════════════════════════════════════════

@@ -1,0 +1,286 @@
+═══════════════════════════════════════════════════════════════════════
+SENTINEL COUNCIL — INSTRUCTIONS FOR CLAUDE (CURSOR)
+═══════════════════════════════════════════════════════════════════════
+
+You are an expert Python developer building a hackathon project called
+Sentinel Council for the Bitget AI Base Camp Hackathon S1.
+Track: Trading Agent (Track 1).
+
+READ EVERY LINE OF THIS FILE BEFORE GENERATING ANY CODE.
+DO NOT ASK QUESTIONS. INFER ALL DETAILS FROM THESE INSTRUCTIONS.
+PROVIDE EVERY FILE IN FULL CODE BLOCKS.
+
+───────────────────────────────────────────────────────────────────────
+ENVIRONMENT (ALREADY SET UP — DO NOT CONFIGURE)
+───────────────────────────────────────────────────────────────────────
+
+.env file exists with: BITGET_API_KEY, BITGET_SECRET_KEY, BITGET_PASSPHRASE
+Python packages installed: python-dotenv, requests, mcp, streamlit
+Node.js is installed
+Bitget MCP server launches via: npx -y bitget-mcp-server
+
+───────────────────────────────────────────────────────────────────────
+FILES TO GENERATE (IN THIS EXACT ORDER)
+───────────────────────────────────────────────────────────────────────
+
+1. sentinel.py       — the complete trading engine
+2. dashboard.py      — the Streamlit dashboard
+3. requirements.txt  — Python dependencies only
+
+Do not generate any other files unless explicitly asked.
+Do not generate setup instructions or shell commands.
+Just the code.
+
+───────────────────────────────────────────────────────────────────────
+HOW TO CALL THE MCP SERVER (CRITICAL)
+───────────────────────────────────────────────────────────────────────
+
+Write an async function:
+
+    async def call_skill(skill_name: str, query: str) -> str
+
+It must:
+  - Use StdioServerParameters(
+        command="npx",
+        args=["-y", "bitget-mcp-server"],
+        env={
+            "BITGET_API_KEY":    os.getenv("BITGET_API_KEY"),
+            "BITGET_SECRET_KEY": os.getenv("BITGET_SECRET_KEY"),
+            "BITGET_PASSPHRASE": os.getenv("BITGET_PASSPHRASE"),
+        }
+    )
+  - Open a stdio_client context
+  - Create a ClientSession and initialize it
+  - Call session.call_tool(skill_name, arguments={"query": query})
+  - Extract the .text attribute from the first content item
+  - Return that text as a string
+  - On ANY failure: log the error, return empty string ""
+  - Never raise an exception to the caller
+
+───────────────────────────────────────────────────────────────────────
+HOW TO NORMALIZE SKILL OUTPUT
+───────────────────────────────────────────────────────────────────────
+
+Write a synchronous function:
+
+    def normalize_skill_output(text: str) -> dict
+
+Returns: {"score": int, "summary": str}
+
+Logic in priority order:
+
+  1. If text is empty or len(text) < 10:
+     return {"score": 50, "summary": "No data"}
+
+  2. Search for pattern: SIGNAL_SCORE: <number>
+     If found:
+       score = int(number), clamped 0-100
+       summary = first sentence of text
+       return {"score": score, "summary": summary}
+
+  3. Count keyword occurrences:
+     Bullish words: bullish, buy, uptrend, breakout, support, accumulation
+     Bearish words: bearish, sell, downtrend, breakdown, resistance, distribution
+
+     bull_count = matches in text.lower()
+     bear_count = matches in text.lower()
+
+     If bull + bear > 0:
+         score = int(25 + (bull / (bull + bear)) * 50)
+     Else:
+         score = 50
+
+     score = max(0, min(100, score))
+     summary = text[:150]
+     return {"score": score, "summary": summary}
+
+───────────────────────────────────────────────────────────────────────
+COUNCIL ENGINE
+───────────────────────────────────────────────────────────────────────
+
+Write a synchronous function:
+
+    def run_council(scores: dict, summaries: dict) -> dict
+
+  confidence = weighted sum using Config.WEIGHTS, rounded to 1 decimal
+  decision:
+      confidence >= BUY_THRESHOLD  → "BUY"
+      confidence <= SELL_THRESHOLD → "SELL"
+      else                         → "HOLD"
+  dominant = key with highest (Config.WEIGHTS[k] * scores[k])
+  explanation = human-readable string: decision, confidence,
+                dominant skill, each skill score and summary on own line
+
+  Returns: {decision, confidence, dominant, explanation}
+
+───────────────────────────────────────────────────────────────────────
+RISK ENGINE
+───────────────────────────────────────────────────────────────────────
+
+Write a synchronous function:
+
+    def calculate_position(
+        decision: str,
+        confidence: float,
+        symbol: str,
+        balance: float,
+        open_positions: dict
+    ) -> dict
+
+  Returns dict with keys: action, size, reason
+
+  HOLD decision          → action=HOLD, size=0, reason="Neutral signal"
+  SELL + position exists → action=CLOSE, size=position["size"],
+                           reason="Bearish — closing position"
+  SELL + no position     → action=HOLD, size=0,
+                           reason="Bearish but no position to close"
+  BUY + already in pos   → action=HOLD, size=0,
+                           reason="Already in position — no pyramiding"
+  BUY + max positions    → action=HOLD, size=0,
+                           reason="Max concurrent positions reached"
+  BUY clear to open:
+      risk_pct = RISK_AGGRESSIVE if confidence >= AGGRESSIVE_THRESHOLD
+                 else RISK_CONSERVATIVE
+      size = round(balance * risk_pct, 2)
+      action=OPEN_LONG, size=size,
+      reason=f"{risk_pct*100:.0f}% risk at {confidence:.1f}% confidence"
+
+───────────────────────────────────────────────────────────────────────
+SIMULATED PORTFOLIO
+───────────────────────────────────────────────────────────────────────
+
+Write a class SimPortfolio:
+
+  __init__:
+    balance = Config.STARTING_BALANCE
+    open_positions = {}
+    trades = []
+    total_pnl = 0.0
+    win_count = 0
+    trade_count = 0
+
+  get_price(symbol) -> float:
+    GET https://api.bitget.com/api/v2/mix/market/ticker
+        ?symbol={symbol}&productType=USDT-FUTURES
+    Parse response["data"][0]["lastPr"] as float
+    Return 0.0 on any failure
+
+  open_long(symbol, size) -> dict:
+    price = self.get_price(symbol)
+    if price == 0.0: log warning, return {}
+    self.balance -= size
+    store position with size, entry_price, opened_at
+    log and return position
+
+  close_position(symbol) -> dict:
+    pop position
+    price = get_price (fallback to entry_price if 0)
+    pnl = (price - entry_price) / entry_price * size
+    balance += size + pnl
+    total_pnl += pnl
+    update win_count and trade_count
+    log and return trade record
+
+  execute(risk_result, symbol) -> dict:
+    dispatch to open_long or close_position based on action
+
+  summary() -> dict:
+    return balance, open_positions, total_pnl,
+           trade_count, win_count, win_rate
+
+───────────────────────────────────────────────────────────────────────
+MAIN CYCLE
+───────────────────────────────────────────────────────────────────────
+
+Write async def run_cycle(portfolio: SimPortfolio) -> None:
+
+For each symbol in Config.SYMBOLS:
+  1. Call all 5 skills CONCURRENTLY with asyncio.gather
+     Each query ends with: "End your response with: SIGNAL_SCORE: [0-100]"
+  2. Normalize each output
+  3. Run council
+  4. Calculate position
+  5. Execute on portfolio
+  6. Append one row to trades.csv:
+     timestamp, symbol, decision, confidence, action, size, balance, pnl
+  7. Log each step
+
+───────────────────────────────────────────────────────────────────────
+CSV + MAIN LOOP
+───────────────────────────────────────────────────────────────────────
+
+async def main_loop() -> None:
+  Create trades.csv with header if not exists
+  Header: timestamp,symbol,decision,confidence,action,size,balance,pnl
+  Instantiate SimPortfolio
+  while True:
+      await run_cycle(portfolio)
+      await asyncio.sleep(Config.LOOP_INTERVAL)
+
+───────────────────────────────────────────────────────────────────────
+CLI ENTRY POINT
+───────────────────────────────────────────────────────────────────────
+
+argparse:
+  python sentinel.py        → asyncio.run(main_loop())
+  python sentinel.py --once → one cycle, print summary, exit
+  python sentinel.py --test → normalizer self-test with 5+ cases, exit
+
+───────────────────────────────────────────────────────────────────────
+LOGGING
+───────────────────────────────────────────────────────────────────────
+
+At module level, before anything else:
+
+  logging.basicConfig(
+      level=logging.INFO,
+      format="%(asctime)s [%(levelname)s] %(message)s",
+      handlers=[
+          logging.StreamHandler(),
+          logging.FileHandler("sentinel.log", encoding="utf-8"),
+      ]
+  )
+  logger = logging.getLogger("sentinel")
+
+Create any required directories before opening file handlers.
+
+───────────────────────────────────────────────────────────────────────
+DASHBOARD
+───────────────────────────────────────────────────────────────────────
+
+dashboard.py:
+  - Read trades.csv
+  - Show latest balance, total PnL, trade count, win rate
+  - Show table of 20 most recent trades
+  - Auto-refresh every 60 seconds using st.rerun() + time.sleep(60)
+  - Handle missing/empty CSV gracefully
+
+───────────────────────────────────────────────────────────────────────
+CODE QUALITY
+───────────────────────────────────────────────────────────────────────
+
+- Type hints on all functions
+- Every exception caught — never crash the loop for one symbol error
+- Comments explain WHY, not WHAT
+- All file paths relative
+- Create required directories at startup
+
+───────────────────────────────────────────────────────────────────────
+REQUIREMENTS.TXT
+───────────────────────────────────────────────────────────────────────
+
+python-dotenv
+requests
+mcp
+streamlit
+
+───────────────────────────────────────────────────────────────────────
+WHAT TO IGNORE
+───────────────────────────────────────────────────────────────────────
+
+Ignore any reference to MacroMorph.
+That is a separate unrelated project. It is not Sentinel Council.
+
+═══════════════════════════════════════════════════════════════════════
+END OF INSTRUCTIONS FOR CLAUDE
+═══════════════════════════════════════════════════════════════════════

@@ -1,0 +1,265 @@
+═══════════════════════════════════════════════════════════════════════
+SENTINEL COUNCIL — BUILD RULES
+Bitget AI Base Camp Hackathon S1
+═══════════════════════════════════════════════════════════════════════
+
+These rules govern every decision made while building Sentinel Council.
+Read before writing any code. Refer back when uncertain.
+Mark each rule CONFIRMED once the requirement is verified in the code.
+
+───────────────────────────────────────────────────────────────────────
+SECTION A — WHAT YOU MUST BUILD
+───────────────────────────────────────────────────────────────────────
+
+RULE A1 — Three files only
+  The final submission contains exactly three code files:
+    sentinel.py
+    dashboard.py
+    requirements.txt
+  Status: [ ] CONFIRMED
+
+RULE A2 — Five Skills, all five
+  The system must call all five Bitget Agent Hub Skills:
+    macro-analyst
+    technical-analysis
+    sentiment-analyst
+    news-briefing
+    market-intel
+  Using fewer than five is acceptable only if a Skill is genuinely
+  unavailable — and this must be logged, not silently skipped.
+  Status: [ ] CONFIRMED
+
+RULE A3 — Three assets
+  The system must analyze all three assets every cycle:
+    BTCUSDT
+    ETHUSDT
+    SOLUSDT
+  Status: [ ] CONFIRMED
+
+RULE A4 — Complete strategy loop
+  The four stages must all be present and traceable in the code:
+    Perception   (5 Skill calls)
+    Decision     (Council Engine → BUY/SELL/HOLD)
+    Risk Mgmt    (Risk Engine → position size)
+    Execution    (SimPortfolio → open/close position)
+  Status: [ ] CONFIRMED
+
+RULE A5 — Simulated trading only
+  No real trades. No real capital. Simulation uses:
+    Real price feeds from Bitget REST API
+    Simulated portfolio starting at $10,000 USDT
+  This is confirmed acceptable by the hackathon handbook.
+  Status: [ ] CONFIRMED
+
+RULE A6 — Audit trail
+  Every decision must be logged to trades.csv with these fields:
+    timestamp, symbol, decision, confidence,
+    action, size, balance, pnl
+  Status: [ ] CONFIRMED
+
+RULE A7 — Three run modes
+  The CLI must support:
+    python sentinel.py          → continuous hourly loop
+    python sentinel.py --once   → one cycle then exit
+    python sentinel.py --test   → normalizer test then exit
+  Status: [ ] CONFIRMED
+
+RULE A8 — Dashboard
+  dashboard.py must:
+    Read trades.csv
+    Show balance, PnL, trade count, win rate
+    Show 20 most recent trades in a table
+    Auto-refresh every 60 seconds
+    Handle missing or empty CSV gracefully
+  Status: [ ] CONFIRMED
+
+───────────────────────────────────────────────────────────────────────
+SECTION B — WHAT YOU MUST NOT BUILD
+───────────────────────────────────────────────────────────────────────
+
+RULE B1 — No extra agents
+  Do not add additional AI agents, sub-agents, or orchestrators.
+  Status: [ ] CONFIRMED (none added)
+
+RULE B2 — No multi-agent frameworks
+  Do not use LangGraph, CrewAI, AutoGen, or any equivalent.
+  Status: [ ] CONFIRMED (none used)
+
+RULE B3 — No external LLM API calls
+  Do not call Anthropic API, OpenAI API, or any LLM API for
+  normalization or any other purpose. The normalization layer
+  uses pure keyword scoring only (Option 3).
+  Status: [ ] CONFIRMED (zero LLM API calls)
+
+RULE B4 — No vector databases or RAG
+  Do not add Pinecone, ChromaDB, Weaviate, or any retrieval system.
+  Status: [ ] CONFIRMED (none used)
+
+RULE B5 — No memory systems
+  Do not add persistent memory, conversation history storage,
+  or any stateful AI reasoning layer.
+  Status: [ ] CONFIRMED (none used)
+
+RULE B6 — No custom ML or neural networks
+  Do not add sklearn, PyTorch, TensorFlow, or any ML training.
+  No forecasting models. No prediction models.
+  Status: [ ] CONFIRMED (none used)
+
+RULE B7 — No Docker, Kubernetes, Redis, PostgreSQL
+  Do not introduce infrastructure complexity.
+  File storage only: CSV, JSON, log file.
+  Status: [ ] CONFIRMED (none used)
+
+RULE B8 — No microservices or message queues
+  Single process. Single script. No event buses.
+  Status: [ ] CONFIRMED (single process)
+
+RULE B9 — No replacement of Bitget Skills
+  Do not replace any Bitget Skill with a custom implementation,
+  a web scraper, or any alternative data source.
+  Skills are the perception layer. They cannot be substituted.
+  Status: [ ] CONFIRMED (all Skills used as-is)
+
+RULE B10 — No complexity added for its own sake
+  Every line of code must serve a specific function in the
+  Perception → Decision → Risk → Execution loop.
+  If a feature does not serve the loop or the demo, cut it.
+  Status: [ ] CONFIRMED (reviewed for necessity)
+
+───────────────────────────────────────────────────────────────────────
+SECTION C — CODE QUALITY RULES
+───────────────────────────────────────────────────────────────────────
+
+RULE C1 — Type hints
+  All functions must have type hints on parameters and return values.
+  Status: [ ] CONFIRMED
+
+RULE C2 — Exception handling
+  Every external call (Skills, price API) is wrapped in try/except.
+  A single symbol or API failure must never crash the entire loop.
+  On failure: log the error, return a safe default, continue.
+  Status: [ ] CONFIRMED
+
+RULE C3 — Comments explain WHY
+  Comments explain the reason for a decision, not what the code does.
+  "# normalize to 0-100 because Council Engine expects that range"
+  NOT: "# divide by 100"
+  Status: [ ] CONFIRMED
+
+RULE C4 — Relative paths only
+  No hardcoded absolute paths (no C:\Users\... or /home/tommy/...).
+  All paths are relative to the script location.
+  Status: [ ] CONFIRMED
+
+RULE C5 — Auto-create directories
+  logs/ and data/ are created automatically at startup if missing.
+  The script never crashes because a directory doesn't exist.
+  Status: [ ] CONFIRMED
+
+RULE C6 — Logging to file and console
+  Every cycle step is logged at INFO level.
+  Errors logged at ERROR level.
+  Log goes to both sentinel.log and stdout simultaneously.
+  Status: [ ] CONFIRMED
+
+───────────────────────────────────────────────────────────────────────
+SECTION D — CONFIGURATION RULES
+───────────────────────────────────────────────────────────────────────
+
+These values are hardcoded in the Config class. Do not change them
+without updating the TASK.txt progress file.
+
+RULE D1 — Symbols
+  SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+  Status: [ ] CONFIRMED
+
+RULE D2 — Loop interval
+  LOOP_INTERVAL = 3600  (seconds — one hour)
+  Status: [ ] CONFIRMED
+
+RULE D3 — Council weights (must sum to 1.0)
+  WEIGHTS = {
+      "macro":     0.30,
+      "technical": 0.30,
+      "sentiment": 0.20,
+      "news":      0.10,
+      "intel":     0.10,
+  }
+  Status: [ ] CONFIRMED
+
+RULE D4 — Decision thresholds
+  BUY_THRESHOLD  = 75
+  SELL_THRESHOLD = 35
+  Status: [ ] CONFIRMED
+
+RULE D5 — Risk limits
+  MAX_POSITIONS       = 3
+  RISK_CONSERVATIVE   = 0.01  (1% of balance)
+  RISK_AGGRESSIVE     = 0.02  (2% of balance)
+  AGGRESSIVE_THRESHOLD = 85
+  Status: [ ] CONFIRMED
+
+RULE D6 — Starting balance
+  STARTING_BALANCE = 10000.0  (simulated USDT)
+  Status: [ ] CONFIRMED
+
+───────────────────────────────────────────────────────────────────────
+SECTION E — SUBMISSION RULES (FROM HANDBOOK)
+───────────────────────────────────────────────────────────────────────
+
+RULE E1 — Demo must be real and runnable
+  The dashboard must be publicly accessible.
+  Judges must be able to open it without credentials.
+  Status: [ ] CONFIRMED (Streamlit Cloud deployed)
+
+RULE E2 — Verifiable usage evidence required
+  trades.csv must contain 20+ rows before submission.
+  Timestamps must span multiple hours (proves autonomous operation).
+  Status: [ ] CONFIRMED (20+ rows at submission)
+
+RULE E3 — Project description under 200 words
+  Use the text in 03_PROJECT_DESCRIPTION.txt.
+  Do not exceed 200 words.
+  Status: [ ] CONFIRMED
+
+RULE E4 — Bitget AI modules must be listed
+  The submission must explicitly list all Bitget modules used.
+  Already included in 03_PROJECT_DESCRIPTION.txt.
+  Status: [ ] CONFIRMED
+
+RULE E5 — X post required for awards
+  Repost: x.com/Bitget_AI/status/2062506424085917944
+  Tag: #BitgetHackathon
+  Mention: @Bitget_AI
+  Include post links in submission form.
+  Status: [ ] CONFIRMED (posted)
+
+RULE E6 — Submission window
+  Open:  June 15, 2026 00:00 UTC+8
+  Close: June 25, 2026 24:00 UTC+8
+  Submit before the deadline. Do not wait until June 25.
+  Status: [ ] CONFIRMED (submitted by June 24)
+
+───────────────────────────────────────────────────────────────────────
+HOW TO USE THESE RULES
+───────────────────────────────────────────────────────────────────────
+
+When you complete a build phase, go through each rule in the
+relevant section and mark it CONFIRMED.
+
+Change [ ] to [X] when confirmed.
+
+Example:
+  RULE A2 — Five Skills, all five
+  Status: [X] CONFIRMED
+
+If a rule cannot be confirmed because a decision was made to change
+something, note the reason next to the status:
+  Status: [X] CONFIRMED (market-intel unavailable — logged as warning)
+
+Any unconfirmed rule at submission time is a risk.
+Review all rules the day before submitting.
+
+═══════════════════════════════════════════════════════════════════════
+END OF BUILD RULES
+═══════════════════════════════════════════════════════════════════════
