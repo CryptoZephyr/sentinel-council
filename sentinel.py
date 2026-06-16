@@ -76,8 +76,8 @@ class Config:
         "intel": 0.10,
     }
 
-    BUY_THRESHOLD = 70.0
-    SELL_THRESHOLD = 35.0
+    BUY_THRESHOLD = 58.0
+    SELL_THRESHOLD = 42.0
 
     RISK_CONSERVATIVE = 0.01
     RISK_AGGRESSIVE = 0.02
@@ -256,11 +256,11 @@ async def get_technical_signal(session: ClientSession, symbol: str) -> dict[str,
     rsi = _rsi(closes, 14)
 
     # RSI: oversold (<40) -> bullish; overbought (>60) -> bearish
-    rsi_score = max(25, min(75, int(50 + (50 - rsi) * 0.4)))
+    rsi_score = max(20, min(80, int(50 + (50 - rsi) * 0.5)))
     # EMA gap: +/-2% of price = full signal
     ema_gap_pct = (ema9 - ema21) / ema21 if ema21 else 0.0
     s_trend = max(-1.0, min(1.0, ema_gap_pct / 0.02))
-    trend_score = max(25, min(75, int(50 + s_trend * 25)))
+    trend_score = max(20, min(80, int(50 + s_trend * 30)))
 
     score = max(20, min(80, int(0.5 * rsi_score + 0.5 * trend_score)))
     trend_label = "uptrend" if ema9 > ema21 else "downtrend"

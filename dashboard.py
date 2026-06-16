@@ -13,13 +13,20 @@ from pathlib import Path
 
 import altair as alt
 import pandas as pd
+import requests
 import streamlit as st
 
 TRADES_CSV = Path("trades.csv")
 PORTFOLIO_JSON = Path("data/portfolio.json")
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
-BUY_THRESHOLD = 70.0
-SELL_THRESHOLD = 35.0
+NEWS_FEEDS = [
+    "https://cointelegraph.com/rss",
+    "https://feeds.feedburner.com/CoinDesk",
+    "https://cryptobriefing.com/feed/",
+    "https://decrypt.co/feed",
+]
+BUY_THRESHOLD = 58.0
+SELL_THRESHOLD = 42.0
 REFRESH_SECONDS = 60
 
 EXPLANATION_LINE_RE = re.compile(
@@ -409,6 +416,19 @@ def dominant_skill(headline: str) -> str:
     return m.group(1).upper() if m else "—"
 
 
+@st.cache_data(ttl=300)
+def load_live_news() -> list[str]:
+    headlines: list[str] = []
+    for url in NEWS_FEEDS:
+        try:
+            r = requests.get(url, headers={"User-Agent": "SentinelCouncil/1.0"}, timeout=8)
+            raw = re.findall(r"<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>", r.text, re.DOTALL)
+            headlines.extend(t.strip() for t in raw[1:6] if t.strip())
+        except Exception:
+            pass
+    return headlines[:16]
+
+
 def load_open_positions() -> dict | None:
     if not PORTFOLIO_JSON.exists():
         return None
@@ -519,7 +539,7 @@ st.markdown(f"""
 <div class="sc-masthead">
     <div>
         <div class="sc-wordmark">SENTINEL <em>COUNCIL</em></div>
-        <div class="sc-tagline">AUTONOMOUS TRADING AGENT &nbsp;·&nbsp; BITGET AI BASE CAMP HACKATHON S1 &nbsp;·&nbsp; TRACK 1</div>
+        <div class="sc-tagline">AUTONOMOUS TRADING AGENT &nbsp;·&nbsp; FIVE-COUNCIL ARCHITECTURE &nbsp;·&nbsp; REAL BITGET PRICES</div>
     </div>
     <div class="sc-live-block">
         <div class="sc-live"><span class="pulse-dot"></span> LIVE</div>
@@ -586,6 +606,29 @@ else:
             <thead><tr><th>SYMBOL</th><th>SIZE</th><th>ENTRY PRICE</th><th>OPENED AT</th></tr></thead>
             <tbody>{rows_html}</tbody>
         </table></div>
+        """, unsafe_allow_html=True)
+
+    # ── Live News ──────────────────────────────────────────────────
+    st.markdown('<div class="sc-section">LIVE CRYPTO NEWS</div>', unsafe_allow_html=True)
+    news_items = load_live_news()
+    if news_items:
+        cols = st.columns(2)
+        for i, headline in enumerate(news_items):
+            with cols[i % 2]:
+                st.markdown(f"""
+                <div style="padding:0.55rem 0.9rem;background:#0a1218;
+                            border-left:2px solid rgba(245,166,35,0.3);
+                            border-radius:0 3px 3px 0;margin-bottom:0.45rem">
+                    <div style="font-family:'DM Sans',sans-serif;font-size:0.78rem;
+                                color:#7a8fa6;line-height:1.4">
+                        {html.escape(headline)}
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+    else:
+        st.markdown("""
+        <div style="font-family:'Share Tech Mono',monospace;font-size:0.65rem;
+                    color:#2a3d52;padding:0.5rem 0">NEWS FEEDS UNAVAILABLE</div>
         """, unsafe_allow_html=True)
 
     # ── Current Signals ────────────────────────────────────────────
@@ -768,7 +811,7 @@ else:
 # ── Footer ─────────────────────────────────────────────────────────
 st.markdown(f"""
 <div class="sc-footer">
-    <span>SENTINEL COUNCIL &nbsp;·&nbsp; BITGET AI BASE CAMP S1 &nbsp;·&nbsp; TRACK 1: TRADING AGENT</span>
+    <span>SENTINEL COUNCIL &nbsp;·&nbsp; POWERED BY BITGET FUTURES API</span>
     <span>AUTO-REFRESH ↺ {REFRESH_SECONDS}s</span>
 </div>
 """, unsafe_allow_html=True)
