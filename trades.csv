@@ -197,3 +197,21 @@ timestamp,symbol,decision,confidence,action,size,balance,pnl,explanation
   - sentiment (20% weight, score 58): F&G 23/100 (Extreme Fear), funding 0.0020%
   - news (10% weight, score 51): 40 headlines — 8 bullish / 7 bearish
   - intel (10% weight, score 49): SOLUSDT 24h -0.10% — neutral flow, OI 4198143"
+2026-06-17T00:14:22.581606+00:00,BTCUSDT,HOLD,51.6,HOLD,0.0,10000.0,0.0,"HOLD signal at 51.6% confidence (18.4 points below BUY threshold). Dominant: macro.
+  - macro (30% weight, score 50): Macro data unavailable — neutral
+  - technical (30% weight, score 50): Insufficient candle data — neutral
+  - sentiment (20% weight, score 59): F&G 22/100 (Extreme Fear), funding 0.0000%
+  - news (10% weight, score 48): 40 headlines — 8 bullish / 9 bearish
+  - intel (10% weight, score 50): Market intel data unavailable — neutral"
+2026-06-17T00:14:55.878270+00:00,ETHUSDT,HOLD,51.6,HOLD,0.0,10000.0,0.0,"HOLD signal at 51.6% confidence (18.4 points below BUY threshold). Dominant: macro.
+  - macro (30% weight, score 50): Macro data unavailable — neutral
+  - technical (30% weight, score 50): Insufficient candle data — neutral
+  - sentiment (20% weight, score 59): F&G 22/100 (Extreme Fear), funding 0.0000%
+  - news (10% weight, score 48): 40 headlines — 8 bullish / 9 bearish
+  - intel (10% weight, score 50): Market intel data unavailable — neutral"
+2026-06-17T00:15:01.108094+00:00,SOLUSDT,HOLD,51.6,HOLD,0.0,10000.0,0.0,"HOLD signal at 51.6% confidence (18.4 points below BUY threshold). Dominant: macro.
+  - macro (30% weight, score 50): Macro data unavailable — neutral
+  - technical (30% weight, score 50): Insufficient candle data — neutral
+  - sentiment (20% weight, score 59): F&G 22/100 (Extreme Fear), funding 0.0000%
+  - news (10% weight, score 48): 40 headlines — 8 bullish / 9 bearish
+  - intel (10% weight, score 50): Market intel data unavailable — neutral"
