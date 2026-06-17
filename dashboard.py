@@ -25,7 +25,7 @@ BUY_THRESHOLD = 58.0
 SELL_THRESHOLD = 42.0
 STARTING_BALANCE = 10_000.0
 CYCLE_SECONDS = 3600
-REFRESH_SECONDS = 60
+REFRESH_SECONDS = 120
 NEWS_FEEDS = [
     "https://cointelegraph.com/rss",
     "https://feeds.feedburner.com/CoinDesk",
@@ -233,22 +233,46 @@ def next_cycle_countdown(df: pd.DataFrame) -> str:
         return "—"
 
 
-@st.cache_data(ttl=60)
+_CG_IDS = {"BTCUSDT": "bitcoin", "ETHUSDT": "ethereum", "SOLUSDT": "solana"}
+
+@st.cache_data(ttl=300)
 def load_live_prices() -> dict[str, dict]:
-    out: dict[str, dict] = {}
-    for sym in SYMBOLS:
-        try:
+    out: dict[str, dict] = {s: {"price": 0.0, "change": 0.0} for s in SYMBOLS}
+
+    # Primary: Bitget REST (may fail on some networks)
+    bitget_ok = False
+    try:
+        for sym in SYMBOLS:
             url = (f"https://api.bitget.com/api/v2/mix/market/ticker"
                    f"?symbol={sym}&productType=USDT-FUTURES")
-            data = requests.get(url, timeout=6).json().get("data", [])
+            data = requests.get(url, timeout=3).json().get("data", [])
             if data:
                 row = data[0]
                 out[sym] = {
                     "price": float(row.get("lastPr", 0)),
                     "change": float(row.get("change24h", 0)),
                 }
+                bitget_ok = True
+    except Exception:
+        pass
+
+    # Fallback: CoinGecko (no auth, globally reachable)
+    if not bitget_ok or all(v["price"] == 0.0 for v in out.values()):
+        try:
+            ids = ",".join(_CG_IDS.values())
+            url = (f"https://api.coingecko.com/api/v3/simple/price"
+                   f"?ids={ids}&vs_currencies=usd&include_24hr_change=true")
+            cg = requests.get(url, timeout=5).json()
+            for sym, cg_id in _CG_IDS.items():
+                entry = cg.get(cg_id, {})
+                if entry:
+                    out[sym] = {
+                        "price": float(entry.get("usd", 0)),
+                        "change": float(entry.get("usd_24h_change", 0)) / 100,
+                    }
         except Exception:
-            out[sym] = {"price": 0.0, "change": 0.0}
+            pass
+
     return out
 
 
