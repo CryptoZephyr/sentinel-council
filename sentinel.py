@@ -681,8 +681,22 @@ def _mcp_server_params() -> StdioServerParameters:
     )
 
 
+_CYCLE_STATUS_PATH = Path("data/cycle_status.json")
+
+
+def _write_cycle_status(status: str) -> None:
+    try:
+        _CYCLE_STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _CYCLE_STATUS_PATH.write_text(
+            json.dumps({"status": status, "ts": datetime.now(timezone.utc).isoformat()})
+        )
+    except Exception:
+        pass
+
+
 async def run_cycle(portfolio: SimPortfolio) -> None:
     """One full cycle: all five perspectives, for every symbol, via one MCP session."""
+    _write_cycle_status("running")
     try:
         async with stdio_client(_mcp_server_params()) as (read, write):
             async with ClientSession(read, write) as session:
@@ -723,6 +737,8 @@ async def run_cycle(portfolio: SimPortfolio) -> None:
                         logger.error("Cycle failed for %s: %s", symbol, exc)
     except Exception as exc:
         logger.error("MCP session failed for this cycle: %s", exc)
+    finally:
+        _write_cycle_status("sleeping")
 
 
 def run_once() -> SimPortfolio:

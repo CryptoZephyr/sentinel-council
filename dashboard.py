@@ -19,13 +19,14 @@ from streamlit_autorefresh import st_autorefresh
 
 TRADES_CSV = Path("trades.csv")
 PORTFOLIO_JSON = Path("data/portfolio.json")
+CYCLE_STATUS_JSON = Path("data/cycle_status.json")
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BGBUSDT", "AVAXUSDT", "DOGEUSDT"]
 SYM_LABELS = {"BTCUSDT": "BTC", "ETHUSDT": "ETH", "SOLUSDT": "SOL", "BGBUSDT": "BGB", "AVAXUSDT": "AVAX", "DOGEUSDT": "DOGE"}
 BUY_THRESHOLD = 58.0
 SELL_THRESHOLD = 42.0
 STARTING_BALANCE = 10_000.0
 CYCLE_SECONDS = 3600
-REFRESH_SECONDS = 30
+REFRESH_SECONDS = 10
 SL_PCT = -0.02
 TP_PCT = 0.05
 NEWS_FEEDS = [
@@ -286,19 +287,36 @@ def load_open_positions() -> dict | None:
         return None
 
 
-def next_cycle_countdown(df: pd.DataFrame) -> str:
+def load_cycle_status() -> dict:
+    if not CYCLE_STATUS_JSON.exists():
+        return {}
     try:
-        last_ts = pd.to_datetime(df["timestamp"].max())
+        return json.loads(CYCLE_STATUS_JSON.read_text())
+    except Exception:
+        return {}
+
+
+def next_cycle_countdown(df: pd.DataFrame | None) -> tuple[str, bool]:
+    """Returns (display_string, is_running)."""
+    status = load_cycle_status()
+    if status.get("status") == "running":
+        return "RUNNING", True
+    try:
+        # Prefer cycle_status.json completion timestamp; fall back to last CSV row
+        ts_str = status.get("ts") or (df["timestamp"].max() if df is not None else None)
+        if not ts_str:
+            return "—", False
+        last_ts = pd.to_datetime(ts_str)
         if last_ts.tzinfo is None:
             last_ts = last_ts.tz_localize("UTC")
         remaining = (last_ts + pd.Timedelta(seconds=CYCLE_SECONDS) -
                      datetime.now(timezone.utc)).total_seconds()
         if remaining <= 0:
-            return "NOW"
+            return "DUE", False
         m, s = int(remaining // 60), int(remaining % 60)
-        return f"{m:02d}:{s:02d}"
+        return f"{m:02d}:{s:02d}", False
     except Exception:
-        return "—"
+        return "—", False
 
 
 _CG_IDS = {
@@ -503,7 +521,9 @@ st.markdown(CSS, unsafe_allow_html=True)
 
 df = load_trades()
 now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M UTC")
-countdown = next_cycle_countdown(df) if df is not None else "—"
+countdown, is_running = next_cycle_countdown(df)
+cycle_label = "CYCLE STATUS" if is_running else "NEXT CYCLE"
+countdown_color = "#00ff87" if is_running else "#f5a623"
 
 st.markdown(f"""
 <div class="sc-masthead">
@@ -514,7 +534,7 @@ st.markdown(f"""
     <div class="sc-live-block">
         <div class="sc-live"><span class="pulse-dot"></span> LIVE</div>
         <div class="sc-clock">{now_utc}</div>
-        <div class="sc-countdown">NEXT CYCLE &nbsp;{countdown}</div>
+        <div class="sc-countdown" style="color:{countdown_color}">{cycle_label} &nbsp;{countdown}</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
