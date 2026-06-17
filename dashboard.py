@@ -19,13 +19,15 @@ import streamlit as st
 
 TRADES_CSV = Path("trades.csv")
 PORTFOLIO_JSON = Path("data/portfolio.json")
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
-SYM_LABELS = {"BTCUSDT": "BTC", "ETHUSDT": "ETH", "SOLUSDT": "SOL"}
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BGBUSDT", "AVAXUSDT", "DOGEUSDT"]
+SYM_LABELS = {"BTCUSDT": "BTC", "ETHUSDT": "ETH", "SOLUSDT": "SOL", "BGBUSDT": "BGB", "AVAXUSDT": "AVAX", "DOGEUSDT": "DOGE"}
 BUY_THRESHOLD = 58.0
 SELL_THRESHOLD = 42.0
 STARTING_BALANCE = 10_000.0
 CYCLE_SECONDS = 3600
-REFRESH_SECONDS = 120
+REFRESH_SECONDS = 30
+SL_PCT = -0.02
+TP_PCT = 0.05
 NEWS_FEEDS = [
     "https://cointelegraph.com/rss",
     "https://feeds.feedburner.com/CoinDesk",
@@ -70,7 +72,7 @@ p, li, span, div { font-family: 'DM Sans', sans-serif !important; }
 .sc-countdown { font-family:'Share Tech Mono',monospace !important;font-size:0.62rem;color:#f5a623;letter-spacing:0.12em;margin-top:0.2rem; }
 
 /* ── Price Strip ── */
-.price-strip { display:grid;grid-template-columns:repeat(3,1fr);gap:0.7rem;margin-bottom:1.5rem; }
+.price-strip { display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:0.7rem;margin-bottom:1.5rem; }
 .price-card { background:#0a1218;border:1px solid rgba(0,255,135,0.08);border-radius:3px;padding:0.75rem 1.1rem;display:flex;justify-content:space-between;align-items:center;transition:border-color .2s; }
 .price-card:hover { border-color:rgba(0,255,135,0.2); }
 .price-sym { font-family:'Chakra Petch',monospace !important;font-size:0.72rem;color:#2a3d52;letter-spacing:0.15em; }
@@ -81,7 +83,7 @@ p, li, span, div { font-family: 'DM Sans', sans-serif !important; }
 .sc-section { font-family:'Share Tech Mono',monospace !important;font-size:0.62rem;letter-spacing:0.28em;color:#2a3d52;text-transform:uppercase;border-bottom:1px solid #0c1620;padding-bottom:0.4rem;margin:2rem 0 1rem; }
 
 /* ── Metric Cards ── */
-.metric-row { display:grid;grid-template-columns:repeat(4,1fr);gap:0.9rem;margin-bottom:0.5rem; }
+.metric-row { display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:0.9rem;margin-bottom:0.5rem; }
 .metric-card { background:#0d1520;border:1px solid rgba(0,255,135,0.1);border-radius:3px;padding:1.1rem 1.4rem;position:relative;overflow:hidden;transition:border-color .25s; }
 .metric-card:hover { border-color:rgba(0,255,135,0.25); }
 .metric-card::after { content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(0,255,135,.45),transparent); }
@@ -91,7 +93,7 @@ p, li, span, div { font-family: 'DM Sans', sans-serif !important; }
 .metric-value.neg { color:#ff4d4d; }
 
 /* ── Signal Grid ── */
-.signal-grid { display:grid;grid-template-columns:repeat(3,1fr);gap:0.9rem;margin-bottom:0.5rem; }
+.signal-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:0.9rem;margin-bottom:0.5rem; }
 .signal-card { background:#0d1520;border:1px solid rgba(0,255,135,0.1);border-radius:3px;padding:1.2rem 1.4rem 1.3rem;transition:border-color .25s; }
 .signal-card:hover { border-color:rgba(0,255,135,0.22); }
 .signal-sym { font-family:'Share Tech Mono',monospace !important;font-size:0.62rem;color:#2a3d52;letter-spacing:0.2em;margin-bottom:0.6rem; }
@@ -158,6 +160,45 @@ div[data-testid="stTabs"] > div > div > button { font-family:'Share Tech Mono',m
 div[data-testid="stTabs"] > div > div > button[aria-selected="true"] { color:#00ff87 !important;border-bottom-color:#00ff87 !important; }
 div[data-testid="stDownloadButton"] > button { font-family:'Share Tech Mono',monospace !important;font-size:.62rem !important;letter-spacing:.12em !important;background:transparent !important;color:#2a3d52 !important;border:1px solid #1a2a38 !important;border-radius:2px !important;padding:.35rem .9rem !important; }
 div[data-testid="stDownloadButton"] > button:hover { color:#00ff87 !important;border-color:rgba(0,255,135,.3) !important; }
+
+/* ── Open Positions Monitor ── */
+.pos-grid { display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:0.7rem;margin-bottom:0.5rem; }
+.pos-card { background:#0a1218;border:1px solid rgba(0,255,135,0.1);border-radius:3px;padding:0.9rem 1.1rem;transition:border-color .2s; }
+.pos-card:hover { border-color:rgba(0,255,135,0.22); }
+.pos-sym { font-family:'Chakra Petch',monospace !important;font-size:0.72rem;color:#2a3d52;letter-spacing:0.15em;margin-bottom:0.65rem; }
+.pos-row { display:flex;justify-content:space-between;align-items:baseline;margin-bottom:0.3rem; }
+.pos-label { font-family:'Share Tech Mono',monospace !important;font-size:0.56rem;color:#2a3d52;letter-spacing:0.1em; }
+.pos-val { font-family:'Share Tech Mono',monospace !important;font-size:0.7rem;color:#c8d8ea; }
+.pos-pnl-pos { font-family:'Share Tech Mono',monospace !important;font-size:1.05rem;color:#00ff87;font-weight:600;text-shadow:0 0 10px rgba(0,255,135,.3); }
+.pos-pnl-neg { font-family:'Share Tech Mono',monospace !important;font-size:1.05rem;color:#ff4d4d;font-weight:600;text-shadow:0 0 10px rgba(255,77,77,.3); }
+.pos-divider { border:none;border-top:1px solid rgba(255,255,255,.04);margin:.45rem 0; }
+.pos-none { font-family:'Share Tech Mono',monospace !important;font-size:.62rem;color:#1a2a38;letter-spacing:.18em;padding:1.2rem 0;text-align:center; }
+
+/* ── Signal Intelligence Matrix ── */
+.matrix-wrap { overflow-x:auto;margin-bottom:0.5rem; }
+.matrix-table { width:100%;border-collapse:separate;border-spacing:3px; }
+.matrix-th { font-family:'Share Tech Mono',monospace !important;font-size:0.56rem;color:#2a3d52;letter-spacing:0.12em;text-align:center;padding:0.35rem 0.4rem;white-space:nowrap; }
+.matrix-th-left { text-align:left !important;padding-left:0 !important; }
+.matrix-sym { font-family:'Chakra Petch',monospace !important;font-size:0.68rem;letter-spacing:0.1em;color:#5e7a94;padding:0.4rem 0.8rem 0.4rem 0;white-space:nowrap;vertical-align:middle; }
+.matrix-cell { border-radius:2px;text-align:center;padding:0.42rem 0.25rem;font-family:'Share Tech Mono',monospace !important;font-size:0.75rem;font-weight:600;min-width:44px;vertical-align:middle; }
+.matrix-conf { border-radius:2px;text-align:center;padding:0.42rem 0.5rem;font-family:'Share Tech Mono',monospace !important;font-size:0.75rem;font-weight:700;min-width:50px;vertical-align:middle; }
+.matrix-dec { border-radius:2px;text-align:center;padding:0.42rem 0.5rem;font-family:'Chakra Petch',monospace !important;font-size:0.68rem;font-weight:700;letter-spacing:0.08em;min-width:58px;vertical-align:middle; }
+
+/* ── Responsive breakpoints ── */
+@media (max-width: 900px) {
+    .sc-masthead { flex-direction:column;align-items:flex-start;gap:.75rem; }
+    .sc-live-block { text-align:left; }
+    .signal-card { padding:1rem 1.1rem 1.1rem; }
+    .metric-value { font-size:1.3rem; }
+}
+@media (max-width: 600px) {
+    .block-container { padding-left:.75rem !important;padding-right:.75rem !important; }
+    .price-strip { grid-template-columns:repeat(2,1fr); }
+    .signal-grid { grid-template-columns:1fr; }
+    .metric-row { grid-template-columns:repeat(2,1fr); }
+    .sc-wordmark { font-size:1.6rem; }
+    .audit-table td, .audit-table th { font-size:.6rem;padding:.35rem .4rem; }
+}
 </style>
 """
 
@@ -233,38 +274,43 @@ def next_cycle_countdown(df: pd.DataFrame) -> str:
         return "—"
 
 
-_CG_IDS = {"BTCUSDT": "bitcoin", "ETHUSDT": "ethereum", "SOLUSDT": "solana"}
+_CG_IDS = {
+    "BTCUSDT": "bitcoin",
+    "ETHUSDT": "ethereum",
+    "SOLUSDT": "solana",
+    "BGBUSDT": "bitget-token",
+    "AVAXUSDT": "avalanche-2",
+    "DOGEUSDT": "dogecoin",
+}
 
 @st.cache_data(ttl=300)
 def load_live_prices() -> dict[str, dict]:
     out: dict[str, dict] = {s: {"price": 0.0, "change": 0.0} for s in SYMBOLS}
 
-    # Primary: Bitget REST (may fail on some networks)
-    bitget_ok = False
-    try:
-        for sym in SYMBOLS:
+    # Primary: Bitget REST per symbol (individual try so one failure doesn't block others)
+    for sym in SYMBOLS:
+        try:
             url = (f"https://api.bitget.com/api/v2/mix/market/ticker"
                    f"?symbol={sym}&productType=USDT-FUTURES")
             data = requests.get(url, timeout=3).json().get("data", [])
             if data:
                 row = data[0]
-                out[sym] = {
-                    "price": float(row.get("lastPr", 0)),
-                    "change": float(row.get("change24h", 0)),
-                }
-                bitget_ok = True
-    except Exception:
-        pass
+                price = float(row.get("lastPr", 0))
+                if price > 0:
+                    out[sym] = {"price": price, "change": float(row.get("change24h", 0))}
+        except Exception:
+            pass
 
-    # Fallback: CoinGecko (no auth, globally reachable)
-    if not bitget_ok or all(v["price"] == 0.0 for v in out.values()):
+    # CoinGecko fallback: only for symbols that Bitget didn't fill
+    missing = [s for s in SYMBOLS if out[s]["price"] == 0.0 and s in _CG_IDS]
+    if missing:
         try:
-            ids = ",".join(_CG_IDS.values())
+            ids = ",".join(_CG_IDS[s] for s in missing)
             url = (f"https://api.coingecko.com/api/v3/simple/price"
                    f"?ids={ids}&vs_currencies=usd&include_24hr_change=true")
             cg = requests.get(url, timeout=5).json()
-            for sym, cg_id in _CG_IDS.items():
-                entry = cg.get(cg_id, {})
+            for sym in missing:
+                entry = cg.get(_CG_IDS[sym], {})
                 if entry:
                     out[sym] = {
                         "price": float(entry.get("usd", 0)),
@@ -507,24 +553,7 @@ else:
     </div>
     """, unsafe_allow_html=True)
 
-    open_positions = load_open_positions()
-    if open_positions:
-        pos_rows = ""
-        for sym, p in open_positions.items():
-            pos_rows += f"""
-            <tr>
-                <td>{html.escape(p.get('symbol', sym))}</td>
-                <td>${float(p.get('size', 0)):.2f}</td>
-                <td>${float(p.get('entry_price', 0)):.4f}</td>
-                <td class="ts-dim">{html.escape(str(p.get('opened_at', ''))[:19].replace('T', ' '))}</td>
-            </tr>"""
-        st.markdown(f"""
-        <div class="audit-wrap" style="margin-top:.75rem">
-        <table class="audit-table">
-            <thead><tr><th>SYMBOL</th><th>SIZE</th><th>ENTRY PRICE</th><th>OPENED AT</th></tr></thead>
-            <tbody>{pos_rows}</tbody>
-        </table></div>
-        """, unsafe_allow_html=True)
+    open_positions = load_open_positions() or {}
 
     # ── Equity Curve ───────────────────────────────────────────────
     st.markdown('<div class="sc-section">EQUITY CURVE</div>', unsafe_allow_html=True)
@@ -576,23 +605,146 @@ else:
     )
     st.altair_chart(equity_chart, width="stretch")
 
-    # ── Live News ──────────────────────────────────────────────────
-    st.markdown('<div class="sc-section">LIVE CRYPTO NEWS</div>', unsafe_allow_html=True)
+    # ── Open Positions Monitor ─────────────────────────────────────
+    st.markdown('<div class="sc-section">OPEN POSITIONS</div>', unsafe_allow_html=True)
 
-    news_items = load_live_news()
-    if news_items:
-        left_col, right_col = st.columns(2)
-        for i, headline in enumerate(news_items):
-            col = left_col if i % 2 == 0 else right_col
-            with col:
-                st.markdown(f"""
-                <div class="news-card">
-                    <div class="news-text">{html.escape(headline)}</div>
-                </div>""", unsafe_allow_html=True)
+    if open_positions:
+        pos_cards = ""
+        for sym, pos in open_positions.items():
+            entry = float(pos.get("entry_price", 0))
+            size = float(pos.get("size", 0))
+            live_p = prices.get(sym, {}).get("price", 0.0)
+            label = SYM_LABELS.get(sym, sym)
+
+            if live_p > 0 and entry > 0:
+                pnl_pct = (live_p - entry) / entry * 100
+                pnl_usd = (live_p - entry) / entry * size
+                pnl_sign = "+" if pnl_pct >= 0 else ""
+                pnl_cls = "pos-pnl-pos" if pnl_pct >= 0 else "pos-pnl-neg"
+                usd_color = "#00ff87" if pnl_usd >= 0 else "#ff4d4d"
+                pnl_block = (
+                    f'<span class="{pnl_cls}">{pnl_sign}{pnl_pct:.2f}%</span>'
+                    f'<span style="font-family:\'Share Tech Mono\',monospace;font-size:.62rem;'
+                    f'color:{usd_color};margin-left:.5rem">{pnl_sign}${abs(pnl_usd):.2f}</span>'
+                )
+                current_str = f"${live_p:,.4f}"
+            else:
+                pnl_block = '<span style="color:#2a3d52">PRICE UNAVAILABLE</span>'
+                current_str = "—"
+
+            sl_price = f"${entry * (1 + SL_PCT):,.4f}" if entry > 0 else "—"
+            tp_price = f"${entry * (1 + TP_PCT):,.4f}" if entry > 0 else "—"
+            opened = str(pos.get("opened_at", ""))[:16].replace("T", " ")
+
+            pos_cards += f"""
+            <div class="pos-card">
+                <div class="pos-sym">◈ {label} / USDT</div>
+                <div class="pos-row">
+                    <span class="pos-label">UNREALIZED P&L</span>
+                    <span>{pnl_block}</span>
+                </div>
+                <hr class="pos-divider"/>
+                <div class="pos-row">
+                    <span class="pos-label">ENTRY</span>
+                    <span class="pos-val">${entry:,.4f}</span>
+                </div>
+                <div class="pos-row">
+                    <span class="pos-label">CURRENT</span>
+                    <span class="pos-val">{current_str}</span>
+                </div>
+                <div class="pos-row">
+                    <span class="pos-label">SIZE</span>
+                    <span class="pos-val">${size:.2f}</span>
+                </div>
+                <hr class="pos-divider"/>
+                <div class="pos-row">
+                    <span class="pos-label" style="color:rgba(255,77,77,.5)">STOP LOSS</span>
+                    <span style="font-family:'Share Tech Mono',monospace;font-size:.65rem;color:rgba(255,77,77,.5)">{sl_price}</span>
+                </div>
+                <div class="pos-row">
+                    <span class="pos-label" style="color:rgba(0,255,135,.4)">TAKE PROFIT</span>
+                    <span style="font-family:'Share Tech Mono',monospace;font-size:.65rem;color:rgba(0,255,135,.4)">{tp_price}</span>
+                </div>
+                <div style="font-family:'Share Tech Mono',monospace;font-size:.52rem;color:#1a2a38;margin-top:.5rem;letter-spacing:.06em">OPENED {html.escape(opened)} UTC</div>
+            </div>"""
+        st.markdown(f'<div class="pos-grid">{pos_cards}</div>', unsafe_allow_html=True)
     else:
-        st.markdown("""
-        <div style="font-family:'Share Tech Mono',monospace;font-size:.65rem;color:#2a3d52;padding:.5rem 0">
-        NEWS FEEDS TEMPORARILY UNAVAILABLE</div>""", unsafe_allow_html=True)
+        st.markdown(
+            '<div class="pos-none">NO OPEN POSITIONS &nbsp;·&nbsp; MONITORING MARKETS</div>',
+            unsafe_allow_html=True,
+        )
+
+    # ── Signal Intelligence Matrix ─────────────────────────────────
+    st.markdown('<div class="sc-section">SIGNAL INTELLIGENCE MATRIX</div>', unsafe_allow_html=True)
+
+    _ANALYSTS = ["macro", "technical", "sentiment", "news", "intel"]
+    _A_LABEL = {"macro": "MACRO", "technical": "TECH", "sentiment": "SENT", "news": "NEWS", "intel": "INTEL"}
+    _A_WEIGHT = {"macro": "30%", "technical": "30%", "sentiment": "20%", "news": "10%", "intel": "10%"}
+
+    def _cell_style(score: int) -> str:
+        if score >= 60:
+            return "background:rgba(0,255,135,0.13);color:#00ff87"
+        if score < 40:
+            return "background:rgba(255,77,77,0.13);color:#ff4d4d"
+        return "background:rgba(245,166,35,0.09);color:#f5a623"
+
+    def _conf_style(decision: str) -> str:
+        return {
+            "BUY":  "background:rgba(0,255,135,0.15);color:#00ff87",
+            "SELL": "background:rgba(255,77,77,0.15);color:#ff4d4d",
+        }.get(decision, "background:rgba(255,255,255,0.03);color:#2a3d52")
+
+    header_cells = "".join(
+        f'<th class="matrix-th">{_A_LABEL[a]}<br>'
+        f'<span style="font-size:.48rem;color:#1a2a38">{_A_WEIGHT[a]}</span></th>'
+        for a in _ANALYSTS
+    )
+    matrix_header = (
+        f'<tr><th class="matrix-th matrix-th-left">SYMBOL</th>'
+        f'{header_cells}'
+        f'<th class="matrix-th">CONF</th>'
+        f'<th class="matrix-th">DECISION</th></tr>'
+    )
+
+    matrix_rows = ""
+    for sym in SYMBOLS:
+        sym_df = df[df["symbol"] == sym].sort_values("timestamp")
+        label = SYM_LABELS.get(sym, sym)
+        if sym_df.empty:
+            empty = '<td class="matrix-cell" style="background:rgba(255,255,255,0.02);color:#1a2a38">—</td>'
+            matrix_rows += (
+                f'<tr><td class="matrix-sym">{label}</td>'
+                f'{"".join(empty for _ in _ANALYSTS)}'
+                f'<td class="matrix-conf" style="background:rgba(255,255,255,0.02);color:#1a2a38">—</td>'
+                f'<td class="matrix-dec" style="color:#1a2a38">—</td></tr>'
+            )
+            continue
+
+        latest = sym_df.iloc[-1]
+        _, skill_rows = parse_explanation(str(latest.get("explanation", "")))
+        score_map = {r["skill"]: r["score"] for r in skill_rows}
+        confidence = float(latest.get("confidence", 0))
+        decision = str(latest.get("decision", "HOLD"))
+        dec_color = {"BUY": "#00ff87", "SELL": "#ff4d4d"}.get(decision, "#2a3d52")
+
+        analyst_cells = "".join(
+            f'<td class="matrix-cell" style="{_cell_style(score_map.get(a, 0))}">'
+            f'{score_map.get(a, "—")}</td>'
+            for a in _ANALYSTS
+        )
+        matrix_rows += (
+            f'<tr><td class="matrix-sym">{label}</td>'
+            f'{analyst_cells}'
+            f'<td class="matrix-conf" style="{_conf_style(decision)}">{confidence:.0f}</td>'
+            f'<td class="matrix-dec" style="color:{dec_color}">{decision}</td></tr>'
+        )
+
+    st.markdown(
+        f'<div class="matrix-wrap"><table class="matrix-table">'
+        f'<thead>{matrix_header}</thead><tbody>{matrix_rows}</tbody>'
+        f'</table></div>',
+        unsafe_allow_html=True,
+    )
 
     # ── Current Signals ────────────────────────────────────────────
     st.markdown('<div class="sc-section">CURRENT SIGNALS</div>', unsafe_allow_html=True)
@@ -685,7 +837,10 @@ else:
 
     trend_df = df[["timestamp", "symbol", "confidence"]].copy()
     trend_df["timestamp"] = pd.to_datetime(trend_df["timestamp"])
-    SYM_COLORS = {"BTCUSDT": "#f5a623", "ETHUSDT": "#4d9eff", "SOLUSDT": "#c084fc"}
+    SYM_COLORS = {
+        "BTCUSDT": "#f5a623", "ETHUSDT": "#4d9eff", "SOLUSDT": "#c084fc",
+        "BGBUSDT": "#00e5ff", "AVAXUSDT": "#ff6b35", "DOGEUSDT": "#c8a800",
+    }
 
     lines = (
         alt.Chart(trend_df)

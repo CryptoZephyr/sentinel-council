@@ -16,7 +16,7 @@ RULE A1 — Three files only
     sentinel.py
     dashboard.py
     requirements.txt
-  Status: [ ] CONFIRMED
+  Status: [X] CONFIRMED
 
 RULE A2 — Five Skills, all five
   The system must call all five Bitget Agent Hub Skills:
@@ -27,14 +27,23 @@ RULE A2 — Five Skills, all five
     market-intel
   Using fewer than five is acceptable only if a Skill is genuinely
   unavailable — and this must be logged, not silently skipped.
-  Status: [ ] CONFIRMED
+  Status: [X] CONFIRMED WITH DEVIATION — Named Skills are not callable
+    tools on bitget-mcp-server (verified via session.list_tools() —
+    56 raw tools returned, none matching Skill names; REST endpoint
+    returns 403). Five analytical functions covering identical roles
+    use underlying Bitget MCP tools directly. See Issue #1 / Decision
+    #1 in 00_TASK.txt. Logged clearly in code (perception layer
+    comment) and in this rules file.
 
 RULE A3 — Three assets
   The system must analyze all three assets every cycle:
     BTCUSDT
     ETHUSDT
     SOLUSDT
-  Status: [ ] CONFIRMED
+  Status: [X] CONFIRMED WITH ADDITION — All three required assets are
+    analyzed every cycle. Three additional assets added: BGBUSDT,
+    AVAXUSDT, DOGEUSDT. Additive, not subtractive. Project description
+    updated to reflect the full six-asset universe.
 
 RULE A4 — Complete strategy loop
   The four stages must all be present and traceable in the code:
@@ -42,27 +51,28 @@ RULE A4 — Complete strategy loop
     Decision     (Council Engine → BUY/SELL/HOLD)
     Risk Mgmt    (Risk Engine → position size)
     Execution    (SimPortfolio → open/close position)
-  Status: [ ] CONFIRMED
+  Status: [X] CONFIRMED — All four stages present. Perception uses
+    direct Bitget MCP tools per A2 deviation note.
 
 RULE A5 — Simulated trading only
   No real trades. No real capital. Simulation uses:
     Real price feeds from Bitget REST API
     Simulated portfolio starting at $10,000 USDT
   This is confirmed acceptable by the hackathon handbook.
-  Status: [ ] CONFIRMED
+  Status: [X] CONFIRMED
 
 RULE A6 — Audit trail
   Every decision must be logged to trades.csv with these fields:
     timestamp, symbol, decision, confidence,
     action, size, balance, pnl
-  Status: [ ] CONFIRMED
+  Status: [X] CONFIRMED — also includes explanation column (additive).
 
 RULE A7 — Three run modes
   The CLI must support:
     python sentinel.py          → continuous hourly loop
     python sentinel.py --once   → one cycle then exit
     python sentinel.py --test   → normalizer test then exit
-  Status: [ ] CONFIRMED
+  Status: [X] CONFIRMED
 
 RULE A8 — Dashboard
   dashboard.py must:
@@ -71,7 +81,8 @@ RULE A8 — Dashboard
     Show 20 most recent trades in a table
     Auto-refresh every 60 seconds
     Handle missing or empty CSV gracefully
-  Status: [ ] CONFIRMED
+  Status: [X] CONFIRMED WITH NOTE — auto-refresh is 30s (faster than
+    spec minimum; data cache TTL is 300s so no extra API cost).
 
 ───────────────────────────────────────────────────────────────────────
 SECTION B — WHAT YOU MUST NOT BUILD
@@ -79,52 +90,57 @@ SECTION B — WHAT YOU MUST NOT BUILD
 
 RULE B1 — No extra agents
   Do not add additional AI agents, sub-agents, or orchestrators.
-  Status: [ ] CONFIRMED (none added)
+  Status: [X] CONFIRMED (none added)
 
 RULE B2 — No multi-agent frameworks
   Do not use LangGraph, CrewAI, AutoGen, or any equivalent.
-  Status: [ ] CONFIRMED (none used)
+  Status: [X] CONFIRMED (none used)
 
 RULE B3 — No external LLM API calls
   Do not call Anthropic API, OpenAI API, or any LLM API for
   normalization or any other purpose. The normalization layer
   uses pure keyword scoring only (Option 3).
-  Status: [ ] CONFIRMED (zero LLM API calls)
+  Status: [X] CONFIRMED (zero LLM API calls)
 
 RULE B4 — No vector databases or RAG
   Do not add Pinecone, ChromaDB, Weaviate, or any retrieval system.
-  Status: [ ] CONFIRMED (none used)
+  Status: [X] CONFIRMED (none used)
 
 RULE B5 — No memory systems
   Do not add persistent memory, conversation history storage,
   or any stateful AI reasoning layer.
-  Status: [ ] CONFIRMED (none used)
+  Status: [X] CONFIRMED (none used)
 
 RULE B6 — No custom ML or neural networks
   Do not add sklearn, PyTorch, TensorFlow, or any ML training.
   No forecasting models. No prediction models.
-  Status: [ ] CONFIRMED (none used)
+  Status: [X] CONFIRMED (none used)
 
 RULE B7 — No Docker, Kubernetes, Redis, PostgreSQL
   Do not introduce infrastructure complexity.
   File storage only: CSV, JSON, log file.
-  Status: [ ] CONFIRMED (none used)
+  Status: [X] CONFIRMED (none used)
 
 RULE B8 — No microservices or message queues
   Single process. Single script. No event buses.
-  Status: [ ] CONFIRMED (single process)
+  Status: [X] CONFIRMED (single process)
 
 RULE B9 — No replacement of Bitget Skills
   Do not replace any Bitget Skill with a custom implementation,
   a web scraper, or any alternative data source.
   Skills are the perception layer. They cannot be substituted.
-  Status: [ ] CONFIRMED (all Skills used as-is)
+  Status: [X] MODIFIED — Named Skills are not callable on
+    bitget-mcp-server (see A2 deviation). Five analytical functions
+    represent the same roles using underlying Bitget MCP data tools.
+    This is a known, documented deviation — not a silent substitution.
+    Full record: 00_TASK.txt Issue #1 / Decision #1. Code comment in
+    sentinel.py perception layer is explicit about the reason.
 
 RULE B10 — No complexity added for its own sake
   Every line of code must serve a specific function in the
   Perception → Decision → Risk → Execution loop.
   If a feature does not serve the loop or the demo, cut it.
-  Status: [ ] CONFIRMED (reviewed for necessity)
+  Status: [X] CONFIRMED (reviewed for necessity)
 
 ───────────────────────────────────────────────────────────────────────
 SECTION C — CODE QUALITY RULES
@@ -171,11 +187,13 @@ without updating the TASK.txt progress file.
 
 RULE D1 — Symbols
   SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
-  Status: [ ] CONFIRMED
+  Status: [X] MODIFIED — Six symbols in production:
+    ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BGBUSDT", "AVAXUSDT", "DOGEUSDT"]
+    All three required assets still present. See A3 note.
 
 RULE D2 — Loop interval
   LOOP_INTERVAL = 3600  (seconds — one hour)
-  Status: [ ] CONFIRMED
+  Status: [X] CONFIRMED
 
 RULE D3 — Council weights (must sum to 1.0)
   WEIGHTS = {
@@ -185,23 +203,27 @@ RULE D3 — Council weights (must sum to 1.0)
       "news":      0.10,
       "intel":     0.10,
   }
-  Status: [ ] CONFIRMED
+  Status: [X] CONFIRMED (weights unchanged, sum = 1.0)
 
 RULE D4 — Decision thresholds
   BUY_THRESHOLD  = 75
   SELL_THRESHOLD = 35
-  Status: [ ] CONFIRMED
+  Status: [X] MODIFIED — BUY_THRESHOLD = 58.0, SELL_THRESHOLD = 42.0
+    Reason: direct numeric scoring clusters at 44–58 in sideways
+    markets; original 35-point neutral zone produced all-HOLD output.
+    See 00_TASK.txt Issue #4 / Change #5.
 
 RULE D5 — Risk limits
   MAX_POSITIONS       = 3
   RISK_CONSERVATIVE   = 0.01  (1% of balance)
   RISK_AGGRESSIVE     = 0.02  (2% of balance)
   AGGRESSIVE_THRESHOLD = 85
-  Status: [ ] CONFIRMED
+  Status: [X] MODIFIED — MAX_POSITIONS = 6 (one per symbol, six assets).
+    Risk percentages and AGGRESSIVE_THRESHOLD unchanged.
 
 RULE D6 — Starting balance
   STARTING_BALANCE = 10000.0  (simulated USDT)
-  Status: [ ] CONFIRMED
+  Status: [X] CONFIRMED
 
 ───────────────────────────────────────────────────────────────────────
 SECTION E — SUBMISSION RULES (FROM HANDBOOK)

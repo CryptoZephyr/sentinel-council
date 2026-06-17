@@ -4,39 +4,35 @@ Bitget AI Base Camp Hackathon S1 — Track 1: Trading Agent
 Submission-ready. Under 200 words.
 ═══════════════════════════════════════════════════════════════════════
 
-Sentinel Council is an autonomous multi-skill AI trading agent built
-on Bitget Agent Hub that synthesizes five independent market
-perspectives before executing any trade.
+Sentinel Council is an autonomous multi-analyst trading agent that
+synthesizes five independent market perspectives before simulating any
+trade, built on Bitget market data infrastructure.
 
-Problem: Most trading agents rely on a single signal source.
-Single-source agents fail when market regimes shift because no
-signal is universally reliable. Sentinel Council solves this by
-combining five specialist analysts into a collective decision —
-the same approach professional trading desks use, fully autonomous.
+Problem: Single-source trading agents fail when market regimes shift.
+Sentinel Council fixes this with a five-analyst council — the same
+approach professional trading desks use, fully automated.
 
 Strategy loop:
 
-PERCEPTION — All five Bitget Agent Hub Skills are called every hour:
-macro-analyst, technical-analysis, sentiment-analyst, news-briefing,
-and market-intel. Each returns structured market intelligence for
-BTCUSDT, ETHUSDT, and SOLUSDT.
+PERCEPTION — Every hour, five analysts run against live Bitget futures
+data: Macro (BTC ticker + funding rate), Technical (EMA9/21 + RSI from
+50 live candles), Sentiment (Fear & Greed contrarian + funding
+pressure), News (keyword balance across 4 crypto RSS feeds), and
+Market Intel (24h price delta + open interest). All via Bitget MCP.
 
-DECISION — A Council Engine combines Skill outputs into a weighted
-confidence score (0–100). Above 75 = BUY. Below 35 = SELL.
-Between = HOLD.
+DECISION — A Council Engine weights the five scores (Macro 30%,
+Technical 30%, Sentiment 20%, News 10%, Intel 10%) into a single
+confidence figure. >=58 = BUY, <=42 = SELL, else HOLD.
 
-RISK MANAGEMENT — A Risk Engine sizes positions by confidence band.
-75–84%: 1% of balance. 85–100%: 2% of balance. Hard limits: max
-one position per asset, max three concurrent positions.
+RISK — Position size: 1% of balance (confidence 58-84) or 2% (85+).
+Max one position per asset, six concurrent maximum.
 
-EXECUTION — Simulated trades execute against real Bitget price feeds.
-Every decision and raw Skill output is logged in a transparent
-audit trail.
+EXECUTION — Simulated positions execute against real Bitget price
+feeds. Every decision logged to a transparent audit trail.
 
-Bitget modules used:
-macro-analyst · technical-analysis · sentiment-analyst ·
-news-briefing · market-intel · Bitget Agent Hub MCP Server ·
-Bitget REST API (price feeds)
+Bitget modules used: Bitget MCP Server (futures_get_ticker,
+futures_get_candles, futures_get_funding_rate,
+futures_get_open_interest), Bitget REST API
 
 Word count: ~185 words.
 
@@ -46,40 +42,37 @@ WHAT TO COPY INTO THE SUBMISSION FORM
 
 Copy everything between the dashed lines below:
 
-──────────────────────────────────────────────────────────────────────
-Sentinel Council is an autonomous multi-skill AI trading agent built
-on Bitget Agent Hub that synthesizes five independent market
-perspectives before executing any trade.
+───────────────────────────────────────────────────────────────────────
+Sentinel Council is an autonomous multi-analyst trading agent that
+synthesizes five independent market perspectives before simulating any
+trade, built on Bitget market data infrastructure.
 
-Problem: Most trading agents rely on a single signal source.
-Single-source agents fail when market regimes shift because no
-signal is universally reliable. Sentinel Council solves this by
-combining five specialist analysts into a collective decision —
-the same approach professional trading desks use, fully autonomous.
+Problem: Single-source trading agents fail when market regimes shift.
+Sentinel Council fixes this with a five-analyst council — the same
+approach professional trading desks use, fully automated.
 
 Strategy loop:
 
-PERCEPTION — All five Bitget Agent Hub Skills are called every hour:
-macro-analyst, technical-analysis, sentiment-analyst, news-briefing,
-and market-intel. Each returns structured market intelligence for
-BTCUSDT, ETHUSDT, and SOLUSDT.
+PERCEPTION — Every hour, five analysts run against live Bitget futures
+data: Macro (BTC ticker + funding rate), Technical (EMA9/21 + RSI from
+50 live candles), Sentiment (Fear & Greed contrarian + funding
+pressure), News (keyword balance across 4 crypto RSS feeds), and
+Market Intel (24h price delta + open interest). All via Bitget MCP.
 
-DECISION — A Council Engine combines Skill outputs into a weighted
-confidence score (0–100). Above 75 = BUY. Below 35 = SELL.
-Between = HOLD.
+DECISION — A Council Engine weights the five scores (Macro 30%,
+Technical 30%, Sentiment 20%, News 10%, Intel 10%) into a single
+confidence figure. >=58 = BUY, <=42 = SELL, else HOLD.
 
-RISK MANAGEMENT — A Risk Engine sizes positions by confidence band.
-75–84%: 1% of balance. 85–100%: 2% of balance. Hard limits: max
-one position per asset, max three concurrent positions.
+RISK — Position size: 1% of balance (confidence 58-84) or 2% (85+).
+Max one position per asset, six concurrent maximum.
 
-EXECUTION — Simulated trades execute against real Bitget price feeds.
-Every decision and raw Skill output is logged in a transparent
-audit trail.
+EXECUTION — Simulated positions execute against real Bitget price
+feeds. Every decision logged to a transparent audit trail.
 
-Bitget modules used: macro-analyst · technical-analysis ·
-sentiment-analyst · news-briefing · market-intel ·
-Bitget Agent Hub MCP Server · Bitget REST API
-──────────────────────────────────────────────────────────────────────
+Bitget modules used: Bitget MCP Server (futures_get_ticker,
+futures_get_candles, futures_get_funding_rate,
+futures_get_open_interest), Bitget REST API
+───────────────────────────────────────────────────────────────────────
 
 ═══════════════════════════════════════════════════════════════════════
 END OF PROJECT DESCRIPTION

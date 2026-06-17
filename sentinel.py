@@ -65,7 +65,7 @@ logger = logging.getLogger("sentinel")
 # ─────────────────────────────────────────────────────────────────
 
 class Config:
-    SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+    SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BGBUSDT", "AVAXUSDT", "DOGEUSDT"]
     LOOP_INTERVAL = 3600  # seconds
 
     WEIGHTS = {
@@ -82,7 +82,9 @@ class Config:
     RISK_CONSERVATIVE = 0.01
     RISK_AGGRESSIVE = 0.02
     AGGRESSIVE_THRESHOLD = 85.0
-    MAX_POSITIONS = 3
+    MAX_POSITIONS = 6
+    SL_PCT = -0.02   # close position if down 2%
+    TP_PCT = 0.05    # close position if up 5%
 
     STARTING_BALANCE = 10000.0
 
@@ -114,6 +116,15 @@ BEARISH_TERMS: dict[str, int] = {
     "declining": 8, "deteriorating": 8, "caution": 6, "concern": 5,
     "below": 6, "falling": 6, "negative": 6, "weak": 5, "downward": 5,
     "lower": 4, "losses": 4,
+}
+
+_SYMBOL_KEYWORDS: dict[str, list[str]] = {
+    "BTCUSDT": ["bitcoin", "btc"],
+    "ETHUSDT": ["ethereum", "eth"],
+    "SOLUSDT": ["solana", "sol"],
+    "BGBUSDT": ["bgb", "bitget"],
+    "AVAXUSDT": ["avalanche", "avax"],
+    "DOGEUSDT": ["dogecoin", "doge"],
 }
 
 NEGATION_WORDS = {
@@ -173,9 +184,23 @@ def normalize_skill_output(text: str) -> dict[str, Any]:
 
 
 # ─────────────────────────────────────────────────────────────────
-# PERCEPTION LAYER — five perspectives synthesized from real Bitget
-# futures market data, reached via the Bitget MCP server. See module
-# docstring for why this replaces the (nonexistent) Agent Hub Skills.
+# PERCEPTION LAYER — five specialist analysts, each producing a direct
+# numeric score (0–100) from real Bitget futures data.
+#
+# The five named Bitget Agent Hub Skills (macro-analyst, technical-
+# analysis, sentiment-analyst, news-briefing, market-intel) are not
+# exposed as callable tools on bitget-mcp-server. Verified via
+# session.list_tools(): 56 raw trading/market-data tools returned,
+# none matching the Skill names. The Agent Hub REST endpoint also
+# returns 403. Full record in 00_TASK.txt Issue #1 and Decision #1.
+#
+# Each function below represents the corresponding analytical role
+# using the underlying Bitget MCP tools directly:
+#   Macro     → futures_get_ticker (BTCUSDT 24h + funding rate)
+#   Technical → futures_get_candles (EMA9/21 crossover + RSI)
+#   Sentiment → futures_get_funding_rate + Fear & Greed API
+#   News      → 4 crypto RSS feeds (no Bitget tool covers news)
+#   Intel     → futures_get_ticker + futures_get_open_interest
 # ─────────────────────────────────────────────────────────────────
 
 async def _call_mcp_tool(session: ClientSession, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -320,9 +345,9 @@ _NEWS_BEAR = [
 ]
 
 
-async def get_news_signal() -> dict[str, Any]:
-    """Multi-source crypto news sentiment from CoinTelegraph, CoinDesk, Decrypt, CryptoBriefing."""
-    logger.info("Perception: news-briefing...")
+async def _fetch_all_news_titles() -> list[str]:
+    """Fetch raw headlines from all RSS feeds. Called once per cycle."""
+    logger.info("Perception: news-briefing (fetching)...")
 
     def _fetch(url: str) -> str:
         try:
@@ -333,27 +358,35 @@ async def get_news_signal() -> dict[str, Any]:
             return ""
 
     texts = await asyncio.gather(*[asyncio.to_thread(_fetch, u) for u in _NEWS_FEEDS])
-
     titles: list[str] = []
     for text in texts:
         if not text:
             continue
         raw = re.findall(r"<title>(?:<!\[CDATA\[)?(.*?)(?:\]\]>)?</title>", text, re.DOTALL)
-        titles.extend(t.lower().strip() for t in raw[1:11])  # skip channel title, take 10
+        titles.extend(t.lower().strip() for t in raw[1:11])
+    return titles
 
+
+def score_news_titles(titles: list[str], symbol: str) -> dict[str, Any]:
+    """Score pre-fetched headlines filtered to symbol-relevant ones where possible."""
     if not titles:
         return {"score": 50, "summary": "News data unavailable — neutral"}
 
-    combined = " ".join(titles)
+    coin_keys = _SYMBOL_KEYWORDS.get(symbol, [])
+    relevant = [t for t in titles if any(k in t for k in coin_keys)] if coin_keys else []
+    scored_titles = relevant if relevant else titles  # fallback to global pool
+
+    combined = " ".join(scored_titles)
     bull = sum(combined.count(w) for w in _NEWS_BULL)
     bear = sum(combined.count(w) for w in _NEWS_BEAR)
     total = bull + bear
     score = max(25, min(75, 50 if total == 0 else int(25 + bull / total * 50)))
-    return {"score": score, "summary": f"{len(titles)} headlines — {bull} bullish / {bear} bearish"}
+    tag = f"{len(scored_titles)} {symbol.replace('USDT', '')}-specific" if relevant else f"{len(titles)} global"
+    return {"score": score, "summary": f"{tag} headlines — {bull} bullish / {bear} bearish"}
 
 
-async def get_market_intel_signal(session: ClientSession, symbol: str) -> dict[str, Any]:
-    """Symbol-level 24h price momentum + open interest as institutional flow proxy."""
+async def get_market_intel_signal(session: ClientSession, symbol: str, prev_oi: float = 0.0) -> dict[str, Any]:
+    """Symbol-level 24h price momentum + OI delta as institutional flow proxy."""
     logger.info("Perception: market-intel [%s]...", symbol)
     ticker = await _call_mcp_tool(session, "futures_get_ticker",
                                    {"symbol": symbol, "productType": "USDT-FUTURES"})
@@ -362,28 +395,39 @@ async def get_market_intel_signal(session: ClientSession, symbol: str) -> dict[s
     rows = ticker.get("data", [])
     oi_rows = oi.get("data", {}).get("openInterestList", [])
     if not rows:
-        return {"score": 50, "summary": "Market intel data unavailable — neutral"}
+        return {"score": 50, "summary": "Market intel data unavailable — neutral", "oi_size": 0.0}
     change24h = float(rows[0].get("change24h", 0))
     oi_size = float(oi_rows[0].get("size", 0)) if oi_rows else 0.0
 
-    # 24h price move: +/-3% = full signal
     s_change = max(-1.0, min(1.0, change24h / 0.03))
-    score = max(20, min(80, int(50 + s_change * 25)))
+    price_score = int(50 + s_change * 25)
+
+    # OI delta: rising OI confirms price direction; divergence is a warning
+    oi_adj = 0
+    oi_note = f", OI {oi_size:.0f}" if oi_size else ""
+    if prev_oi > 0 and oi_size > 0:
+        oi_delta = (oi_size - prev_oi) / prev_oi
+        s_oi = max(-1.0, min(1.0, oi_delta / 0.05))  # 5% OI change = full signal
+        oi_adj = int(s_oi * s_change * 10)            # only amplifies when price + OI agree
+        oi_note = f", OI Δ{oi_delta * 100:+.1f}%"
+
+    score = max(20, min(80, price_score + oi_adj))
     flow_label = "accumulating" if score > 55 else "distributing" if score < 45 else "neutral flow"
-    summary = (f"{symbol} 24h {change24h * 100:+.2f}% — {flow_label}"
-               + (f", OI {oi_size:.0f}" if oi_size else ""))
-    return {"score": score, "summary": summary}
+    summary = f"{symbol} 24h {change24h * 100:+.2f}% — {flow_label}{oi_note}"
+    return {"score": score, "summary": summary, "oi_size": oi_size}
 
 
 async def run_perception(
     session: ClientSession,
     symbol: str,
     macro_result: dict[str, Any],
-    news_result: dict[str, Any],
+    news_titles: list[str],
+    prev_oi: float = 0.0,
 ) -> dict[str, dict[str, Any]]:
     technical_result = await get_technical_signal(session, symbol)
     sentiment_result = await get_sentiment_signal(session, symbol)
-    intel_result = await get_market_intel_signal(session, symbol)
+    intel_result = await get_market_intel_signal(session, symbol, prev_oi)
+    news_result = score_news_titles(news_titles, symbol)
 
     perception = {
         "macro": macro_result,
@@ -477,6 +521,7 @@ class SimPortfolio:
         self.total_pnl = 0.0
         self.win_count = 0
         self.trade_count = 0
+        self.last_oi: dict[str, float] = {}
 
     def get_price(self, symbol: str) -> float:
         try:
@@ -534,6 +579,22 @@ class SimPortfolio:
     def win_rate(self) -> float:
         return round(self.win_count / self.trade_count * 100, 1) if self.trade_count else 0.0
 
+    def check_exits(self) -> list[str]:
+        """Return symbols where stop-loss or take-profit has been hit."""
+        to_close = []
+        for symbol, pos in list(self.open_positions.items()):
+            price = self.get_price(symbol)
+            if price == 0.0:
+                continue
+            pnl_pct = (price - pos["entry_price"]) / pos["entry_price"]
+            if pnl_pct <= Config.SL_PCT:
+                logger.info("Stop-loss %.2f%% — queuing close %s", pnl_pct * 100, symbol)
+                to_close.append(symbol)
+            elif pnl_pct >= Config.TP_PCT:
+                logger.info("Take-profit %.2f%% — queuing close %s", pnl_pct * 100, symbol)
+                to_close.append(symbol)
+        return to_close
+
     def summary(self) -> dict[str, Any]:
         return {
             "balance": round(self.balance, 4),
@@ -548,7 +609,7 @@ class SimPortfolio:
         try:
             Config.PORTFOLIO_JSON.parent.mkdir(parents=True, exist_ok=True)
             with open(Config.PORTFOLIO_JSON, "w") as f:
-                json.dump({**self.summary(), "trades": self.trades}, f, indent=2)
+                json.dump({**self.summary(), "trades": self.trades, "last_oi": self.last_oi}, f, indent=2)
         except Exception as exc:
             logger.error("Portfolio save failed: %s", exc)
 
@@ -564,6 +625,7 @@ class SimPortfolio:
                 portfolio.total_pnl = data.get("total_pnl", 0.0)
                 portfolio.win_count = data.get("win_count", 0)
                 portfolio.trade_count = data.get("trade_count", 0)
+                portfolio.last_oi = data.get("last_oi", {})
                 logger.info("Portfolio loaded — balance $%.2f, %d open positions",
                             portfolio.balance, len(portfolio.open_positions))
                 return portfolio
@@ -626,13 +688,23 @@ async def run_cycle(portfolio: SimPortfolio) -> None:
             async with ClientSession(read, write) as session:
                 await session.initialize()
                 macro_result = await get_macro_signal(session)
-                news_result = await get_news_signal()
+                news_titles = await _fetch_all_news_titles()
+
+                # SL/TP check — runs before new signals each cycle
+                for sym in portfolio.check_exits():
+                    trade = portfolio.close_position(sym)
+                    if trade:
+                        logger.info("Exit triggered [%s] PnL $%.4f", sym, trade.get("pnl", 0))
 
                 for symbol in Config.SYMBOLS:
                     logger.info("=" * 60)
                     logger.info("CYCLE START — %s", symbol)
                     try:
-                        perception = await run_perception(session, symbol, macro_result, news_result)
+                        perception = await run_perception(
+                            session, symbol, macro_result, news_titles,
+                            portfolio.last_oi.get(symbol, 0.0),
+                        )
+                        portfolio.last_oi[symbol] = perception["intel"].get("oi_size", 0.0)
                         scores = {k: v["score"] for k, v in perception.items()}
                         summaries = {k: v["summary"] for k, v in perception.items()}
 

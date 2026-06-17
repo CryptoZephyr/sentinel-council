@@ -4,3 +4,5 @@ __pycache__/
 logs/
 data/
 sentinel.log
+.agents/
+skills-lock.json
