@@ -73,7 +73,7 @@ p, li, span, div { font-family: 'DM Sans', sans-serif !important; }
 .sc-countdown { font-family:'Share Tech Mono',monospace !important;font-size:0.62rem;color:#f5a623;letter-spacing:0.12em;margin-top:0.2rem; }
 
 /* ── Price Strip ── */
-.price-strip { display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:0.7rem;margin-bottom:1.5rem; }
+.price-strip { display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:0.7rem;margin-bottom:1.5rem; }
 .price-card { background:#0a1218;border:1px solid rgba(0,255,135,0.08);border-radius:3px;padding:0.75rem 1.1rem;display:flex;justify-content:space-between;align-items:center;transition:border-color .2s; }
 .price-card:hover { border-color:rgba(0,255,135,0.2); }
 .price-sym { font-family:'Chakra Petch',monospace !important;font-size:0.72rem;color:#2a3d52;letter-spacing:0.15em; }
