@@ -4,18 +4,20 @@ An autonomous multi-asset trading agent that synthesizes **five independent mark
 
 > Five specialist analysts. One collective decision. Zero guesswork.
 
+**Live dashboard → [sentinel-council01.streamlit.app](https://sentinel-council01.streamlit.app/)**
+
 ---
 
 ## What it does
 
-Every hour, Sentinel Council runs a full intelligence cycle across **BTCUSDT**, **ETHUSDT**, and **SOLUSDT**:
+Every hour, Sentinel Council runs a full intelligence cycle across **6 symbols** — BTCUSDT, ETHUSDT, SOLUSDT, BGBUSDT, AVAXUSDT, DOGEUSDT:
 
 | Phase | What happens |
 |---|---|
 | **Perception** | Five signal functions query real Bitget futures data (ticker, candles, funding rate, open interest) and the Alternative.me Fear & Greed API, producing a score (0–100) per analyst per symbol |
 | **Council** | A weighted confidence score combines all five: Macro 30% · Technical 30% · Sentiment 20% · News 10% · Intel 10% |
 | **Decision** | ≥ 58 → BUY · ≤ 42 → SELL · otherwise → HOLD |
-| **Risk** | Position size: 1% of balance (confidence 58–84) or 2% (≥ 85). Hard limits: max 1 position per symbol, max 3 concurrent |
+| **Risk** | Position size: 1% of balance (confidence 58–84) or 2% (≥ 85). Max 1 position per symbol, max 6 concurrent. Stop-loss −2%, take-profit +5% enforced each cycle |
 | **Execution** | `SimPortfolio` opens/closes simulated positions using real Bitget prices. Balance starts at $10,000 USDT |
 | **Audit** | Every decision appended to `trades.csv` — timestamp, symbol, decision, confidence, action, size, balance, PnL, full explanation |
 
@@ -23,13 +25,13 @@ Every hour, Sentinel Council runs a full intelligence cycle across **BTCUSDT**, 
 
 ## Five Signals
 
-| Analyst | Data source | What it measures |
-|---|---|---|
-| **Macro** | Bitget MCP — `futures_get_ticker` (BTCUSDT) | BTC 24h momentum + funding rate as crypto regime signal |
-| **Technical** | Bitget MCP — `futures_get_candles` (50 × 1h) | EMA9/EMA21 trend gap + RSI(14) contrarian score |
-| **Sentiment** | Alternative.me Fear & Greed API + Bitget funding rate | Contrarian F&G scoring (fear = buy signal) + funding pressure |
-| **News** | CoinTelegraph · CoinDesk · Decrypt · CryptoBriefing (RSS) | Bullish/bearish keyword ratio across 40 live headlines |
-| **Intel** | Bitget MCP — `futures_get_ticker` + `futures_get_open_interest` | Per-symbol 24h price change + open interest as institutional flow proxy |
+| Analyst | Weight | Data source | What it measures |
+|---|---|---|---|
+| **Macro** | 30% | Bitget MCP — `futures_get_ticker` (BTCUSDT) | BTC 24h momentum + funding rate as shared crypto regime signal |
+| **Technical** | 30% | Bitget MCP — `futures_get_candles` (50 × 1h) | EMA9/EMA21 trend gap + RSI(14) contrarian score |
+| **Sentiment** | 20% | Alternative.me Fear & Greed API + Bitget per-symbol funding rate | Contrarian F&G scoring (extreme fear = buy signal) + funding pressure |
+| **News** | 10% | CoinTelegraph · CoinDesk · Decrypt · CryptoBriefing (RSS) | Per-symbol keyword filtering → bullish/bearish ratio across live headlines |
+| **Intel** | 10% | Bitget MCP — `futures_get_ticker` + `futures_get_open_interest` | Per-symbol 24h price delta + OI change as institutional flow confirmation |
 
 All scores are computed with pure numeric math — no external LLM calls, no keyword normalizer in the live path.
 
@@ -38,22 +40,60 @@ All scores are computed with pure numeric math — no external LLM calls, no key
 ## Bitget modules used
 
 - **Bitget MCP Server** (`npx -y bitget-mcp-server`) — `futures_get_ticker`, `futures_get_candles`, `futures_get_funding_rate`, `futures_get_open_interest`
-- **Bitget REST API** — `GET /api/v2/mix/market/ticker` (real-time price feed for portfolio execution)
+- **Bitget REST API** — `GET /api/v2/mix/market/ticker` (real-time price feed for portfolio execution and dashboard)
 
 ---
 
 ## Dashboard
 
-A Mission Control dark-theme Streamlit dashboard with:
+Mission Control dark-theme Streamlit dashboard — auto-refreshes every 10 seconds.
 
-- **Live price strip** — BTC / ETH / SOL prices + 24h % change from Bitget REST API (60s cache)
-- **Confidence arc gauges** — SVG semi-circle speedometer per symbol, color-coded BUY/SELL/HOLD
-- **Equity curve** — Portfolio balance over time vs $10,000 baseline
-- **Five-skill score bars** — Color-coded per signal direction (green ≥ 60, amber 40–59, red < 40)
-- **Decision timeline** — Scatter plot of every BUY/SELL/HOLD decision per symbol over time
-- **Confidence trend** — Line chart with BUY/SELL threshold markers
-- **Live news ticker** — TV-style scrolling bar with real-time crypto headlines
-- **Decision log** — Full audit trail with download
+| Section | What it shows |
+|---|---|
+| **Live price strip** | All 6 pairs with real-time prices + 24h % change |
+| **Portfolio status** | Balance, total PnL, closed trades, win rate |
+| **Equity curve** | Portfolio balance over time vs $10,000 baseline |
+| **Open positions monitor** | Live unrealized PnL per position with entry price, current price, SL/TP levels |
+| **Signal intelligence matrix** | 6×5 color-coded heatmap — every symbol vs every analyst score at a glance |
+| **Current signals** | Per-symbol confidence gauge, decision, dominant analyst, score bars |
+| **Decision timeline** | Scatter plot of every BUY/SELL/HOLD decision per symbol over time |
+| **Skill breakdown** | Per-analyst score bars + summary text, tabbed by symbol |
+| **Confidence trend** | Multi-line chart with BUY/SELL threshold markers for all 6 symbols |
+| **Decision log** | Full 25-row audit trail with CSV download |
+| **Live news ticker** | TV-style scrolling bar with real-time crypto headlines (fixed bottom) |
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  SENTINEL COUNCIL                   │
+├─────────────────────────────────────────────────────┤
+│  PERCEPTION LAYER         (Bitget MCP + REST)       │
+│  ┌─────────┐ ┌──────────┐ ┌───────────┐            │
+│  │  Macro  │ │Technical │ │ Sentiment │            │
+│  │  30%    │ │   30%    │ │   20%     │            │
+│  └────┬────┘ └────┬─────┘ └─────┬─────┘           │
+│  ┌────┴────┐ ┌────┴─────┐       │                  │
+│  │  News   │ │  Intel   │       │                  │
+│  │  10%    │ │   10%    │       │                  │
+│  └────┬────┘ └────┬─────┘       │                  │
+│       └───────────┴─────────────┘                  │
+│                   │                                 │
+│  COUNCIL ENGINE ──┤ weighted confidence 0–100       │
+│                   │ BUY ≥58 · SELL ≤42 · HOLD       │
+│                   │                                 │
+│  RISK ENGINE ─────┤ 1–2% of balance per position   │
+│                   │ SL −2% · TP +5%                │
+│                   │ max 6 concurrent positions      │
+│                   │                                 │
+│  EXECUTION ───────┤ SimPortfolio ($10,000 USDT)     │
+│                   │ real Bitget prices              │
+│                   │                                 │
+│  AUDIT TRAIL ─────┤ trades.csv · sentinel.log       │
+└─────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -66,7 +106,7 @@ pip install -r requirements.txt
 Requires Node.js for the Bitget MCP server:
 
 ```bash
-npx -y bitget-mcp-server   # downloads on first run
+npx -y bitget-mcp-server   # downloads automatically on first run
 ```
 
 ---
@@ -86,14 +126,14 @@ BITGET_PASSPHRASE=your_passphrase
 ## Run
 
 ```bash
-# Validate normalizer (6 test cases)
-python sentinel.py --test
-
-# One full cycle across all three symbols, then exit
+# Run one full cycle across all 6 symbols, then exit
 python sentinel.py --once
 
 # Continuous hourly loop (production mode)
 python sentinel.py
+
+# Validate keyword normalizer (test mode)
+python sentinel.py --test
 ```
 
 ---
@@ -101,44 +141,11 @@ python sentinel.py
 ## Run the dashboard
 
 ```bash
-# If streamlit is on PATH
+# Standard
 streamlit run dashboard.py
 
-# Microsoft Store Python (common on Windows)
+# Microsoft Store Python (Windows)
 python3.12 -m streamlit run dashboard.py
-```
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────┐
-│                  SENTINEL COUNCIL                   │
-├─────────────────────────────────────────────────────┤
-│  PERCEPTION LAYER                                   │
-│  ┌─────────┐ ┌──────────┐ ┌───────────┐            │
-│  │  Macro  │ │Technical │ │ Sentiment │            │
-│  │  30%    │ │   30%    │ │   20%     │            │
-│  └────┬────┘ └────┬─────┘ └─────┬─────┘           │
-│       │           │             │                  │
-│  ┌────┴────┐ ┌────┴─────┐       │                  │
-│  │  News   │ │  Intel   │       │                  │
-│  │  10%    │ │   10%    │       │                  │
-│  └────┬────┘ └────┬─────┘       │                  │
-│       └───────────┴─────────────┘                  │
-│                   │                                 │
-│  COUNCIL ENGINE ──┤ weighted confidence 0–100       │
-│                   │ BUY ≥58 · SELL ≤42 · HOLD       │
-│                   │                                 │
-│  RISK ENGINE ─────┤ size 1–2% of balance            │
-│                   │ max 3 concurrent positions       │
-│                   │                                 │
-│  EXECUTION ───────┤ SimPortfolio ($10,000 USDT)     │
-│                   │ real Bitget prices              │
-│                   │                                 │
-│  AUDIT TRAIL ─────┤ trades.csv · sentinel.log       │
-└─────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -147,15 +154,16 @@ python3.12 -m streamlit run dashboard.py
 
 ```
 sentinel-council/
-├── sentinel.py       # Agent: all five phases
-├── dashboard.py      # Streamlit dashboard
-├── requirements.txt  # Python dependencies
-├── trades.csv        # Audit trail (committed as evidence)
-├── .env              # Credentials (never committed)
+├── sentinel.py          # Agent: all five phases + hourly loop
+├── dashboard.py         # Streamlit Mission Control dashboard
+├── requirements.txt     # Python dependencies
+├── trades.csv           # Audit trail (committed as evidence)
+├── .env                 # Credentials (never committed)
 ├── logs/
-│   └── sentinel.log  # Runtime log (not committed)
+│   └── sentinel.log     # Runtime log
 └── data/
-    └── portfolio.json  # Simulated portfolio state
+    ├── portfolio.json   # Simulated portfolio state (persisted)
+    └── cycle_status.json  # Live cycle state for dashboard countdown
 ```
 
 ---
@@ -164,6 +172,6 @@ sentinel-council/
 
 - **Hackathon**: Bitget AI Base Camp S1 — Track 1: Trading Agent
 - **Deadline**: June 25, 2026
-- **Builder**: Tommy (CryptoZephyr)
-- **Dashboard**: https://sentinel-council-8w83xzappwvtzkhaymveqqt.streamlit.app/
+- **Builder**: CryptoZephyr
+- **Dashboard**: https://sentinel-council01.streamlit.app/
 - **Repo**: https://github.com/CryptoZephyr/sentinel-council
