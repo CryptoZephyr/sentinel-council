@@ -185,19 +185,46 @@ div[data-testid="stDownloadButton"] > button:hover { color:#00ff87 !important;bo
 .matrix-dec { border-radius:2px;text-align:center;padding:0.42rem 0.5rem;font-family:'Chakra Petch',monospace !important;font-size:0.68rem;font-weight:700;letter-spacing:0.08em;min-width:58px;vertical-align:middle; }
 
 /* ── Responsive breakpoints ── */
+@media (max-width: 1100px) {
+    .signal-grid { grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); }
+    .metric-row { grid-template-columns:repeat(auto-fill,minmax(160px,1fr)); }
+}
 @media (max-width: 900px) {
     .sc-masthead { flex-direction:column;align-items:flex-start;gap:.75rem; }
     .sc-live-block { text-align:left; }
     .signal-card { padding:1rem 1.1rem 1.1rem; }
-    .metric-value { font-size:1.3rem; }
+    .metric-value { font-size:1.35rem; }
+    .price-strip { grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); }
+    .pos-grid { grid-template-columns:repeat(auto-fill,minmax(190px,1fr)); }
+    .matrix-th, .matrix-cell, .matrix-conf, .matrix-dec { font-size:.65rem;padding:.35rem .3rem; }
+}
+@media (max-width: 768px) {
+    .signal-grid { grid-template-columns:repeat(2,1fr); }
+    .metric-row { grid-template-columns:repeat(2,1fr); }
+    .pos-grid { grid-template-columns:repeat(2,1fr); }
+    .price-strip { grid-template-columns:repeat(3,1fr); }
+    .sc-wordmark { font-size:1.8rem; }
+    .metric-value { font-size:1.2rem; }
 }
 @media (max-width: 600px) {
-    .block-container { padding-left:.75rem !important;padding-right:.75rem !important; }
+    .block-container { padding-left:.65rem !important;padding-right:.65rem !important; }
     .price-strip { grid-template-columns:repeat(2,1fr); }
     .signal-grid { grid-template-columns:1fr; }
     .metric-row { grid-template-columns:repeat(2,1fr); }
-    .sc-wordmark { font-size:1.6rem; }
-    .audit-table td, .audit-table th { font-size:.6rem;padding:.35rem .4rem; }
+    .pos-grid { grid-template-columns:1fr; }
+    .sc-wordmark { font-size:1.5rem; }
+    .sc-tagline { font-size:.52rem;letter-spacing:.14em; }
+    .audit-table td, .audit-table th { font-size:.58rem;padding:.3rem .35rem; }
+    .matrix-wrap { font-size:.62rem; }
+    .matrix-th, .matrix-cell, .matrix-conf, .matrix-dec { font-size:.6rem;padding:.3rem .2rem;min-width:36px; }
+    .matrix-sym { font-size:.6rem;padding-right:.4rem; }
+    .bd-item { margin-bottom:.75rem; }
+    .gauge-wrap svg { max-width:120px !important; }
+}
+@media (max-width: 400px) {
+    .price-strip { grid-template-columns:repeat(2,1fr); }
+    .signal-grid { grid-template-columns:1fr; }
+    .metric-row { grid-template-columns:1fr; }
 }
 </style>
 """
@@ -772,6 +799,9 @@ else:
         domain=["BUY", "SELL", "HOLD"],
         range=["#00ff87", "#ff4d4d", "#2a3d52"],
     )
+    _sym_labels_ordered = [SYM_LABELS.get(s, s) for s in SYMBOLS]
+    timeline_df["sym_label"] = timeline_df["symbol"].map(SYM_LABELS).fillna(timeline_df["symbol"])
+
     timeline = (
         alt.Chart(timeline_df)
         .mark_circle(opacity=0.85, size=70)
@@ -780,10 +810,12 @@ else:
                 labelColor="#2a3d52", gridColor="#0c1620", tickColor="#0c1620",
                 labelFont="Share Tech Mono", labelFontSize=9, domainColor="#0c1620",
             )),
-            y=alt.Y("symbol:N", title=None, axis=alt.Axis(
-                labelColor="#5e7a94", tickColor="#0c1620", domainColor="#0c1620",
-                labelFont="Share Tech Mono", labelFontSize=10,
-            )),
+            y=alt.Y("sym_label:N", title=None,
+                scale=alt.Scale(domain=_sym_labels_ordered),
+                axis=alt.Axis(
+                    labelColor="#5e7a94", tickColor="#0c1620", domainColor="#0c1620",
+                    labelFont="Share Tech Mono", labelFontSize=10,
+                )),
             color=alt.Color("decision:N", scale=COLOR_SCALE,
                 legend=alt.Legend(
                     labelColor="#5e7a94", titleColor="#2a3d52",
@@ -792,12 +824,12 @@ else:
                 )),
             tooltip=[
                 alt.Tooltip("timestamp:T", title="Time"),
-                alt.Tooltip("symbol:N", title="Symbol"),
+                alt.Tooltip("sym_label:N", title="Symbol"),
                 alt.Tooltip("decision:N", title="Decision"),
                 alt.Tooltip("confidence:Q", title="Confidence", format=".1f"),
             ],
         )
-        .properties(height=130, background="#070b0f",
+        .properties(height=160, background="#070b0f",
                     padding={"top": 12, "bottom": 12, "left": 12, "right": 12})
         .configure_view(strokeWidth=0, fill="#070b0f")
     )
@@ -806,12 +838,22 @@ else:
     # ── Skill Breakdown ────────────────────────────────────────────
     st.markdown('<div class="sc-section">SKILL BREAKDOWN</div>', unsafe_allow_html=True)
 
-    syms_with_data = sorted(df["symbol"].unique())
-    tabs = st.tabs([f"◈ {s}" for s in syms_with_data])
+    tabs = st.tabs([f"◈ {SYM_LABELS.get(s, s)}" for s in SYMBOLS])
 
-    for symbol, tab in zip(syms_with_data, tabs):
+    for symbol, tab in zip(SYMBOLS, tabs):
         with tab:
             sym_df = df[df["symbol"] == symbol].sort_values("timestamp")
+            if sym_df.empty:
+                st.markdown(
+                    '<div class="sc-empty" style="padding:2rem">'
+                    'AWAITING FIRST CYCLE<br>'
+                    '<span style="color:#2a3d52;font-size:.6rem">No data yet for this pair</span><br><br>'
+                    '<code>python sentinel.py --once</code>'
+                    '</div>',
+                    unsafe_allow_html=True,
+                )
+                continue
+
             latest = sym_df.iloc[-1]
             headline, skill_rows = parse_explanation(str(latest.get("explanation", "")))
             decision = str(latest.get("decision", "HOLD"))
@@ -835,12 +877,13 @@ else:
     # ── Confidence Trend ───────────────────────────────────────────
     st.markdown('<div class="sc-section">CONFIDENCE TREND</div>', unsafe_allow_html=True)
 
+    SYM_COLORS = {
+        "BTC": "#f5a623", "ETH": "#4d9eff", "SOL": "#c084fc",
+        "BGB": "#00e5ff", "AVAX": "#ff6b35", "DOGE": "#c8a800",
+    }
     trend_df = df[["timestamp", "symbol", "confidence"]].copy()
     trend_df["timestamp"] = pd.to_datetime(trend_df["timestamp"])
-    SYM_COLORS = {
-        "BTCUSDT": "#f5a623", "ETHUSDT": "#4d9eff", "SOLUSDT": "#c084fc",
-        "BGBUSDT": "#00e5ff", "AVAXUSDT": "#ff6b35", "DOGEUSDT": "#c8a800",
-    }
+    trend_df["sym_label"] = trend_df["symbol"].map(SYM_LABELS).fillna(trend_df["symbol"])
 
     lines = (
         alt.Chart(trend_df)
@@ -856,8 +899,11 @@ else:
                     labelFont="Share Tech Mono", labelFontSize=9, domainColor="#0c1620",
                     titleColor="#2a3d52", titleFont="Share Tech Mono", titleFontSize=8,
                 )),
-            color=alt.Color("symbol:N",
-                scale=alt.Scale(domain=list(SYM_COLORS.keys()), range=list(SYM_COLORS.values())),
+            color=alt.Color("sym_label:N",
+                scale=alt.Scale(
+                    domain=list(SYM_COLORS.keys()),
+                    range=list(SYM_COLORS.values()),
+                ),
                 legend=alt.Legend(
                     labelColor="#5e7a94", titleColor="#2a3d52",
                     labelFont="Share Tech Mono", labelFontSize=10,
@@ -865,7 +911,7 @@ else:
                 )),
             tooltip=[
                 alt.Tooltip("timestamp:T", title="Time"),
-                alt.Tooltip("symbol:N", title="Symbol"),
+                alt.Tooltip("sym_label:N", title="Symbol"),
                 alt.Tooltip("confidence:Q", title="Confidence", format=".1f"),
             ],
         )

@@ -233,3 +233,57 @@ timestamp,symbol,decision,confidence,action,size,balance,pnl,explanation
   - sentiment (20% weight, score 59): F&G 22/100 (Extreme Fear), funding -0.0019%
   - news (10% weight, score 50): 40 headlines — 7 bullish / 7 bearish
   - intel (10% weight, score 40): SOLUSDT 24h -1.16% — distributing, OI 4194364"
+2026-06-17T02:30:59.188130+00:00,BTCUSDT,HOLD,52.0,HOLD,0.0,10000.0,0.0,"HOLD signal at 52.0% confidence (18.0 points below BUY threshold). Dominant: macro.
+  - macro (30% weight, score 51): BTC 24h +0.37%, funding -0.0022% — regime neutral
+  - technical (30% weight, score 50): RSI 42.5, EMA9/21 downtrend (gap -0.13%)
+  - sentiment (20% weight, score 59): F&G 22/100 (Extreme Fear), funding -0.0022%
+  - news (10% weight, score 46): 40 headlines — 6 bullish / 8 bearish
+  - intel (10% weight, score 53): BTCUSDT 24h +0.37% — neutral flow, OI 33024"
+2026-06-17T02:31:02.667730+00:00,ETHUSDT,HOLD,53.6,HOLD,0.0,10000.0,0.0,"HOLD signal at 53.6% confidence (16.4 points below BUY threshold). Dominant: technical.
+  - macro (30% weight, score 51): BTC 24h +0.37%, funding -0.0022% — regime neutral
+  - technical (30% weight, score 52): RSI 43.2, EMA9/21 uptrend (gap +0.25%)
+  - sentiment (20% weight, score 59): F&G 22/100 (Extreme Fear), funding 0.0036%
+  - news (10% weight, score 46): 40 headlines — 6 bullish / 8 bearish
+  - intel (10% weight, score 63): ETHUSDT 24h +1.62% — accumulating, OI 825891"
+2026-06-17T02:31:05.983740+00:00,SOLUSDT,HOLD,53.4,HOLD,0.0,10000.0,0.0,"HOLD signal at 53.4% confidence (16.6 points below BUY threshold). Dominant: macro.
+  - macro (30% weight, score 51): BTC 24h +0.37%, funding -0.0022% — regime neutral
+  - technical (30% weight, score 51): RSI 44.0, EMA9/21 uptrend (gap +0.05%)
+  - sentiment (20% weight, score 59): F&G 22/100 (Extreme Fear), funding 0.0014%
+  - news (10% weight, score 46): 40 headlines — 6 bullish / 8 bearish
+  - intel (10% weight, score 64): SOLUSDT 24h +1.77% — accumulating, OI 4152612"
+2026-06-17T02:50:47.245602+00:00,BTCUSDT,HOLD,51.8,HOLD,0.0,10000.0,0.0,"HOLD signal at 51.8% confidence (6.2 points below BUY threshold). Dominant: technical.
+  - macro (30% weight, score 49): BTC 24h +0.10%, funding -0.0032% — regime neutral
+  - technical (30% weight, score 51): RSI 38.2, EMA9/21 downtrend (gap -0.16%)
+  - sentiment (20% weight, score 59): F&G 22/100 (Extreme Fear), funding -0.0032%
+  - news (10% weight, score 50): 4 BTC-specific headlines — 2 bullish / 2 bearish
+  - intel (10% weight, score 50): BTCUSDT 24h +0.09% — neutral flow, OI 33166"
+2026-06-17T02:50:49.945681+00:00,ETHUSDT,HOLD,53.8,HOLD,0.0,10000.0,0.0,"HOLD signal at 53.8% confidence (4.2 points below BUY threshold). Dominant: technical.
+  - macro (30% weight, score 49): BTC 24h +0.10%, funding -0.0032% — regime neutral
+  - technical (30% weight, score 54): RSI 38.0, EMA9/21 uptrend (gap +0.20%)
+  - sentiment (20% weight, score 59): F&G 22/100 (Extreme Fear), funding 0.0047%
+  - news (10% weight, score 50): 2 ETH-specific headlines — 0 bullish / 0 bearish
+  - intel (10% weight, score 61): ETHUSDT 24h +1.34% — accumulating, OI 828654"
+2026-06-17T02:50:52.310397+00:00,SOLUSDT,HOLD,52.6,HOLD,0.0,10000.0,0.0,"HOLD signal at 52.6% confidence (5.4 points below BUY threshold). Dominant: technical.
+  - macro (30% weight, score 49): BTC 24h +0.10%, funding -0.0032% — regime neutral
+  - technical (30% weight, score 52): RSI 40.8, EMA9/21 uptrend (gap +0.00%)
+  - sentiment (20% weight, score 59): F&G 22/100 (Extreme Fear), funding -0.0004%
+  - news (10% weight, score 46): 40 global headlines — 6 bullish / 8 bearish
+  - intel (10% weight, score 59): SOLUSDT 24h +1.20% — accumulating, OI 4193610"
+2026-06-17T02:50:54.680864+00:00,BGBUSDT,HOLD,51.7,HOLD,0.0,10000.0,0.0,"HOLD signal at 51.7% confidence (6.3 points below BUY threshold). Dominant: technical.
+  - macro (30% weight, score 49): BTC 24h +0.10%, funding -0.0032% — regime neutral
+  - technical (30% weight, score 50): RSI 50.5, EMA9/21 uptrend (gap +0.12%)
+  - sentiment (20% weight, score 59): F&G 22/100 (Extreme Fear), funding 0.0033%
+  - news (10% weight, score 46): 40 global headlines — 6 bullish / 8 bearish
+  - intel (10% weight, score 56): BGBUSDT 24h +0.80% — accumulating, OI 8568702"
+2026-06-17T02:50:57.052938+00:00,AVAXUSDT,HOLD,54.1,HOLD,0.0,10000.0,0.0,"HOLD signal at 54.1% confidence (3.9 points below BUY threshold). Dominant: technical.
+  - macro (30% weight, score 49): BTC 24h +0.10%, funding -0.0032% — regime neutral
+  - technical (30% weight, score 52): RSI 50.9, EMA9/21 uptrend (gap +0.34%)
+  - sentiment (20% weight, score 59): F&G 22/100 (Extreme Fear), funding 0.0038%
+  - news (10% weight, score 46): 40 global headlines — 6 bullish / 8 bearish
+  - intel (10% weight, score 74): AVAXUSDT 24h +2.94% — accumulating, OI 2242392"
+2026-06-17T02:50:59.461814+00:00,DOGEUSDT,HOLD,51.6,HOLD,0.0,10000.0,0.0,"HOLD signal at 51.6% confidence (6.4 points below BUY threshold). Dominant: technical.
+  - macro (30% weight, score 49): BTC 24h +0.10%, funding -0.0032% — regime neutral
+  - technical (30% weight, score 50): RSI 43.7, EMA9/21 downtrend (gap -0.14%)
+  - sentiment (20% weight, score 59): F&G 22/100 (Extreme Fear), funding 0.0025%
+  - news (10% weight, score 46): 40 global headlines — 6 bullish / 8 bearish
+  - intel (10% weight, score 55): DOGEUSDT 24h +0.66% — neutral flow, OI 920978678"
