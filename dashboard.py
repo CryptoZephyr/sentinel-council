@@ -304,8 +304,7 @@ def gauge_svg(confidence: float, decision: str) -> str:
         angle_rad = math.radians((1 - confidence / 100) * 180)
         x_end = cx + r * math.cos(angle_rad)
         y_end = cy - r * math.sin(angle_rad)
-        large = 1 if confidence > 50 else 0
-        fill_path = f"M {cx-r} {cy} A {r} {r} 0 {large} 0 {x_end:.2f} {y_end:.2f}"
+        fill_path = f"M {cx-r} {cy} A {r} {r} 0 0 0 {x_end:.2f} {y_end:.2f}"
         fill_el = (
             f'<path d="{fill_path}" fill="none" stroke="{color}" stroke-width="7" '
             f'stroke-linecap="round" style="filter:drop-shadow(0 0 5px {color})"/>'
