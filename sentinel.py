@@ -54,7 +54,7 @@ logging.basicConfig(
     format="%(asctime)s [%(levelname)s] %(message)s",
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler("sentinel.log", encoding="utf-8"),
+        logging.FileHandler("logs/sentinel.log", encoding="utf-8"),
     ],
 )
 logger = logging.getLogger("sentinel")
@@ -297,12 +297,15 @@ async def get_sentiment_signal(session: ClientSession, symbol: str) -> dict[str,
     """Contrarian Fear & Greed index + per-symbol funding rate positioning."""
     logger.info("Perception: sentiment-analyst [%s]...", symbol)
 
-    fg_value = 50
-    try:
-        fg_resp = requests.get("https://api.alternative.me/fng/?limit=1", timeout=6)
-        fg_value = int(fg_resp.json()["data"][0]["value"])
-    except Exception as exc:
-        logger.warning("Fear & Greed API unavailable: %s", exc)
+    def _fetch_fg() -> int:
+        try:
+            resp = requests.get("https://api.alternative.me/fng/?limit=1", timeout=6)
+            return int(resp.json()["data"][0]["value"])
+        except Exception as exc:
+            logger.warning("Fear & Greed API unavailable: %s", exc)
+            return 50
+
+    fg_value = await asyncio.to_thread(_fetch_fg)
 
     funding = 0.0
     funding_data = await _call_mcp_tool(session, "futures_get_funding_rate",
@@ -608,8 +611,10 @@ class SimPortfolio:
     def save(self) -> None:
         try:
             Config.PORTFOLIO_JSON.parent.mkdir(parents=True, exist_ok=True)
-            with open(Config.PORTFOLIO_JSON, "w") as f:
+            tmp = Config.PORTFOLIO_JSON.with_suffix(".tmp")
+            with open(tmp, "w") as f:
                 json.dump({**self.summary(), "trades": self.trades, "last_oi": self.last_oi}, f, indent=2)
+            os.replace(tmp, Config.PORTFOLIO_JSON)
         except Exception as exc:
             logger.error("Portfolio save failed: %s", exc)
 
@@ -662,7 +667,7 @@ def log_trade_row(symbol: str, council: dict[str, Any], risk_result: dict[str, A
     }
     with open(Config.TRADES_CSV, "a", newline="", encoding="utf-8") as f:
         csv.DictWriter(f, fieldnames=CSV_FIELDS).writerow(row)
-    logger.info("Logged trade row -> %s", row)
+    logger.info("Logged [%s] %s @ %.1f%% → %s", row["symbol"], row["decision"], row["confidence"], row["action"])
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -687,9 +692,9 @@ _CYCLE_STATUS_PATH = Path("data/cycle_status.json")
 def _write_cycle_status(status: str) -> None:
     try:
         _CYCLE_STATUS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        _CYCLE_STATUS_PATH.write_text(
-            json.dumps({"status": status, "ts": datetime.now(timezone.utc).isoformat()})
-        )
+        tmp = _CYCLE_STATUS_PATH.with_suffix(".tmp")
+        tmp.write_text(json.dumps({"status": status, "ts": datetime.now(timezone.utc).isoformat()}))
+        os.replace(tmp, _CYCLE_STATUS_PATH)
     except Exception:
         pass
 

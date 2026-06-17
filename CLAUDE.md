@@ -12,13 +12,13 @@ Sentinel Council is an autonomous multi-skill AI trading agent for the Bitget AI
 
 ```bash
 # Run the agent (hourly loop)
-python sentinel_council.py
+python sentinel.py
 
 # Run one analysis cycle across all symbols
-python sentinel_council.py --once
+python sentinel.py --once
 
 # Validate the normalizer (keyword scoring)
-python sentinel_council.py --test
+python sentinel.py --test
 
 # Run the dashboard (separate process)
 streamlit run dashboard.py
@@ -34,7 +34,7 @@ The system is organized into **five sequential phases** that must all be present
 
 3. **Council Engine** (lines 474–546): Combines normalized scores using fixed weights (macro 30%, technical 30%, sentiment 20%, news 10%, intel 10%) into a single weighted confidence (0–100). Decision rules: `confidence >= 75 → BUY`, `<= 35 → SELL`, otherwise `HOLD`.
 
-4. **Risk Engine** (lines 549–607): Translates BUY/SELL/HOLD into sized actions. Position sizing: 1% of balance for confidence 75–84, 2% for 85+. Hard limits: max 1 position per symbol, max 3 concurrent positions, no pyramiding.
+4. **Risk Engine**: Translates BUY/SELL/HOLD into sized actions. Position sizing: 1% of balance for confidence 58–84, 2% for 85+. Hard limits: max 1 position per symbol, max 6 concurrent positions, SL −2% / TP +5%, no pyramiding.
 
 5. **Execution Engine** (lines 610–741): `SimPortfolio` class simulates trades using real prices from Bitget REST API. Tracks open positions, closed trades, PnL, win rate. Persists state to `data/portfolio.json` after each trade.
 
@@ -42,7 +42,7 @@ The system is organized into **five sequential phases** that must all be present
 
 Read `04_BUILD_RULES.txt` for the complete list. Key constraints:
 
-- **Exactly three files**: `sentinel_council.py`, `dashboard.py`, `requirements.txt`
+- **Exactly three code files**: `sentinel.py`, `dashboard.py`, `requirements.txt`
 - **All five Skills must be called** every cycle (or log a failure, never silently skip)
 - **Zero external LLM API calls** — normalization is keyword-based only
 - **No extra agents, frameworks, or ML** — this is a single-process, pure-logic agent
@@ -87,14 +87,16 @@ Formula: `score = 25 + (bullish_count / (bullish_count + bearish_count)) * 50`, 
 These are hardcoded in `Config` and should match `04_BUILD_RULES.txt`:
 
 ```python
-SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"]
+SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BGBUSDT", "AVAXUSDT", "DOGEUSDT"]
 LOOP_INTERVAL = 3600  # seconds (1 hour)
-BUY_THRESHOLD = 75.0
-SELL_THRESHOLD = 35.0
-RISK_PCT_CONSERVATIVE = 0.01   # 1% for confidence 75–84
+BUY_THRESHOLD = 58.0
+SELL_THRESHOLD = 42.0
+RISK_PCT_CONSERVATIVE = 0.01   # 1% for confidence 58–84
 RISK_PCT_AGGRESSIVE = 0.02     # 2% for confidence 85+
 AGGRESSIVE_THRESHOLD = 85.0
-MAX_CONCURRENT_POSITIONS = 3
+MAX_POSITIONS = 6
+SL_PCT = -0.02   # stop-loss -2%
+TP_PCT = 0.05    # take-profit +5%
 STARTING_BALANCE = 10000.0
 ```
 
@@ -119,7 +121,7 @@ The CSV is committed to GitHub and judges must be able to verify results.
 
 ## Testing the Normalizer
 
-Run `python sentinel_council.py --test` to validate keyword scoring against 6 test cases:
+Run `python sentinel.py --test` to validate keyword scoring against 6 test cases:
 - Bullish macro (Fed easing, DXY softening, ETF inflows)
 - Bearish technical (death cross, distribution, RSI low)
 - Neutral sentiment (Fear & Greed at 51, balanced funding)

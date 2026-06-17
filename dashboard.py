@@ -242,12 +242,16 @@ def load_trades() -> pd.DataFrame | None:
     return df.sort_values("timestamp").reset_index(drop=True) if not df.empty else None
 
 
-def compute_metrics(df: pd.DataFrame) -> dict:
+def compute_metrics(df: pd.DataFrame) -> dict[str, Any]:
     latest = df.iloc[-1]
-    closes = df[df["action"] == "CLOSE"]
-    pnl_deltas = df["pnl"].diff().reindex(closes.index)
-    tc = len(closes)
-    wc = int((pnl_deltas > 0).sum())
+    port: dict[str, Any] = {}
+    if PORTFOLIO_JSON.exists():
+        try:
+            port = json.loads(PORTFOLIO_JSON.read_text())
+        except Exception:
+            pass
+    tc = int(port.get("trade_count", 0))
+    wc = int(port.get("win_count", 0))
     return {
         "balance": float(latest["balance"]),
         "total_pnl": float(latest["pnl"]),
@@ -442,7 +446,7 @@ def render_score_bars(rows: list[dict]) -> str:
         c = score_color(r["score"])
         parts.append(f"""
         <div class="score-row">
-            <span class="score-skill">{r['skill'].upper()}</span>
+            <span class="score-skill">{html.escape(r['skill']).upper()}</span>
             <div class="score-track">
                 <div class="score-fill" style="width:{r['score']}%;background:{c};box-shadow:0 0 5px {c}55;"></div>
             </div>
@@ -465,9 +469,9 @@ def render_signal_card(symbol: str, row: pd.Series) -> str:
         <div class="signal-sym">◈ {symbol} &nbsp;<em>{ts}</em></div>
         <div style="display:flex;align-items:center;gap:1.2rem">
             <div>
-                <div class="{signal_cls(decision)}">{decision}</div>
+                <div class="{signal_cls(decision)}">{html.escape(decision)}</div>
                 <div class="sig-conf" style="color:{conf_color}">{confidence:.1f}%</div>
-                <div class="sig-dom">▲ {dom}</div>
+                <div class="sig-dom">▲ {html.escape(dom)}</div>
             </div>
             <div class="gauge-wrap" style="flex:1">{gauge}</div>
         </div>
@@ -482,7 +486,7 @@ def render_breakdown_bars(rows: list[dict]) -> str:
         parts.append(f"""
         <div class="bd-item">
             <div class="bd-header">
-                <span class="bd-skill">{r['skill'].upper()}</span>
+                <span class="bd-skill">{html.escape(r['skill']).upper()}</span>
                 <span class="bd-score" style="color:{c}">{r['score']}</span>
             </div>
             <div class="bd-track">
@@ -500,7 +504,7 @@ def render_summary_rows(rows: list[dict]) -> str:
         safe = html.escape(r["summary"])
         parts.append(f"""
         <div class="summary-row" style="border-left-color:{c}40">
-            <div class="summary-tag" style="color:{c}">{r['skill'].upper()} &middot; {r['weight']}% &middot; SCORE {r['score']}</div>
+            <div class="summary-tag" style="color:{c}">{html.escape(r['skill']).upper()} &middot; {r['weight']}% &middot; SCORE {r['score']}</div>
             <div class="summary-text">{safe}</div>
         </div>""")
     return "".join(parts)

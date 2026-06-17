@@ -4,5 +4,4 @@ mcp
 streamlit
 pandas
 altair
-numpy
 streamlit-autorefresh
