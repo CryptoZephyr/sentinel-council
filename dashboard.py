@@ -8,7 +8,6 @@ import html
 import json
 import math
 import re
-import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -16,6 +15,7 @@ import altair as alt
 import pandas as pd
 import requests
 import streamlit as st
+from streamlit_autorefresh import st_autorefresh
 
 TRADES_CSV = Path("trades.csv")
 PORTFOLIO_JSON = Path("data/portfolio.json")
@@ -496,6 +496,7 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed",
 )
+st_autorefresh(interval=REFRESH_SECONDS * 1000, key="sc_autorefresh")
 st.markdown(CSS, unsafe_allow_html=True)
 
 # ── Masthead ──────────────────────────────────────────────────────
@@ -1016,5 +1017,3 @@ if ticker_news:
         </div>
     </div>""", unsafe_allow_html=True)
 
-time.sleep(REFRESH_SECONDS)
-st.rerun()

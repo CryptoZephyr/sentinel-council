@@ -5,3 +5,4 @@ streamlit
 pandas
 altair
 numpy
+streamlit-autorefresh
