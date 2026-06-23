@@ -28,22 +28,22 @@ streamlit run dashboard.py
 
 The system is organized into **five sequential phases** that must all be present and traceable:
 
-1. **Perception Layer** (lines 340–471): Calls all five Bitget Agent Hub Skills concurrently (macro-analyst, technical-analysis, sentiment-analyst, news-briefing, market-intel) for each symbol.
+1. **Perception Layer**: Five analytical functions query underlying Bitget MCP tools and RSS/API data directly. The named Agent Hub Skills are not exposed as callable tools by `bitget-mcp-server`; this implementation maps the same analyst roles onto real available tools.
 
-2. **Normalization Layer** (lines 128–293): Converts raw Skill text → `{ score: 0-100, summary: str }` using pure keyword scoring. **Zero external LLM API calls**. Priority: (1) look for `SIGNAL_SCORE: N` in response, (2) count bullish/bearish keywords with negation-aware weighting, (3) default to 50 (neutral).
+2. **Normalization Layer**: Retained for `python sentinel.py --test` only. The live path computes numeric scores directly from market data, with no external LLM API calls.
 
-3. **Council Engine** (lines 474–546): Combines normalized scores using fixed weights (macro 30%, technical 30%, sentiment 20%, news 10%, intel 10%) into a single weighted confidence (0–100). Decision rules: `confidence >= 75 → BUY`, `<= 35 → SELL`, otherwise `HOLD`.
+3. **Council Engine**: Combines five scores using fixed weights (macro 30%, technical 30%, sentiment 20%, news 10%, intel 10%) into one confidence score. Decision rules: `confidence >= 72 → BUY`, `<= 28 → SELL`, `60–71` or `29–40 → WATCH`, otherwise `WAIT`. `HOLD` is not a valid backend state.
 
-4. **Risk Engine**: Translates BUY/SELL/HOLD into sized actions. Position sizing: 1% of balance for confidence 58–84, 2% for 85+. Hard limits: max 1 position per symbol, max 6 concurrent positions, SL −2% / TP +5%, no pyramiding.
+4. **Risk Engine**: Translates BUY/SELL/WATCH/WAIT into executable simulated actions. Position sizing: 1% of balance for BUY scores 72–74, 2% for 75+. WATCH/WAIT do not open new positions. Hard limits: max 1 position per symbol, max 6 concurrent positions, SL −2% / TP +5%, no pyramiding, and no same-cycle re-entry after an automatic SL/TP close.
 
-5. **Execution Engine** (lines 610–741): `SimPortfolio` class simulates trades using real prices from Bitget REST API. Tracks open positions, closed trades, PnL, win rate. Persists state to `data/portfolio.json` after each trade.
+5. **Execution Engine**: `SimPortfolio` simulates trades using real Bitget REST prices with per-symbol sanity bounds. Tracks open positions, closed trades, PnL, win rate, and persists state to `data/portfolio.json` after each trade.
 
 ## Build Rules — Non-Negotiable Constraints
 
 Read `04_BUILD_RULES.txt` for the complete list. Key constraints:
 
 - **Exactly three code files**: `sentinel.py`, `dashboard.py`, `requirements.txt`
-- **All five Skills must be called** every cycle (or log a failure, never silently skip)
+- **All five analyst roles must run** every cycle (or log a failure, never silently skip)
 - **Zero external LLM API calls** — normalization is keyword-based only
 - **No extra agents, frameworks, or ML** — this is a single-process, pure-logic agent
 - **Real prices only** — use Bitget REST API for market prices
@@ -53,26 +53,27 @@ Read `04_BUILD_RULES.txt` for the complete list. Key constraints:
 ## Data Files & Directories
 
 - `logs/sentinel.log` — runtime log (created at startup)
-- `logs/decisions.csv` — **audit trail** (one row per decision, critical for submission)
-- `logs/cycles/*.json` — full cycle record per symbol, includes raw Skill outputs (proof)
+- `trades.csv` — **audit trail** (one row per decision or automatic SL/TP close, critical for submission)
+- `data/cycle_status.json` — dashboard cycle state
 - `data/portfolio.json` — persisted sim portfolio state (balance, open positions, trade history)
 - `.env` — Bitget credentials (API_KEY, SECRET_KEY, PASSPHRASE) — never commit
 
 ## Skill Calling & MCP Integration
 
-The original code calls Bitget Skills via HTTP REST API (not MCP):
+The code uses MCP stdio with a pinned package:
 
 ```python
-def _call_skill(skill_name: str, params: dict) -> str:
-    url = f"{Config.BITGET_BASE_URL}/agent-hub/v1/skills/{skill_name}"
-    # POST with HMAC-SHA256 signature via _bitget_headers()
+StdioServerParameters(
+    command="npx",
+    args=["-y", "bitget-mcp-server@1.1.0", "--modules", "all"],
+)
 ```
 
-**If migrating to MCP** (via `npx -y bitget-mcp-server`): update `_call_skill()` to use `StdioServerParameters` + `ClientSession.call_tool()` as documented in `01_INSTRUCTIONS_FOR_CLAUDE.txt` (lines 36–59). All five Skills must be called per symbol per cycle.
+The live tools are `futures_get_ticker`, `futures_get_candles`, `futures_get_funding_rate`, and `futures_get_open_interest`. RSS feeds cover the news role because no Bitget MCP news tool is available.
 
-## Keyword Scoring Details
+## Test-Only Keyword Scoring Details
 
-The normalizer scores Skill text by counting keyword occurrences with negation awareness:
+The `--test` normalizer scores sample text by counting keyword occurrences with negation awareness. This is not used in the live trading path:
 
 - **Bullish terms** (weighted): bullish, buy, uptrend, breakout, accumulation, oversold, recovery, rate-cut, ETF inflows, whale accumulation, golden cross, etc.
 - **Bearish terms** (weighted): bearish, sell, downtrend, breakdown, distribution, overbought, resistance, rate-hike, ETF outflows, whale selling, death cross, etc.
@@ -89,12 +90,16 @@ These are hardcoded in `Config` and should match `04_BUILD_RULES.txt`:
 ```python
 SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "BGBUSDT", "AVAXUSDT", "DOGEUSDT"]
 LOOP_INTERVAL = 3600  # seconds (1 hour)
-BUY_THRESHOLD = 58.0
-SELL_THRESHOLD = 42.0
-RISK_PCT_CONSERVATIVE = 0.01   # 1% for confidence 58–84
-RISK_PCT_AGGRESSIVE = 0.02     # 2% for confidence 85+
-AGGRESSIVE_THRESHOLD = 85.0
+BUY_THRESHOLD = 72.0
+SELL_THRESHOLD = 28.0
+WATCH_BUY_THRESHOLD = 60.0
+WATCH_SELL_THRESHOLD = 40.0
+RISK_PCT_CONSERVATIVE = 0.01   # 1% for confidence 72–74
+RISK_PCT_AGGRESSIVE = 0.02     # 2% for confidence 75+
+AGGRESSIVE_THRESHOLD = 75.0
 MAX_POSITIONS = 6
+SCORE_MIN = 5
+SCORE_MAX = 95
 SL_PCT = -0.02   # stop-loss -2%
 TP_PCT = 0.05    # take-profit +5%
 STARTING_BALANCE = 10000.0
@@ -105,17 +110,17 @@ Changing these requires updating `04_BUILD_RULES.txt` and re-confirming all stat
 ## Logging & Errors
 
 - **Logger setup** at module level using both `StreamHandler` (console) and `FileHandler` (logs/sentinel.log)
-- **Every external call** (Skill, price API) is wrapped in try/except — single-symbol failure must never crash the loop
+- **Every external call** (MCP, RSS, price API) is wrapped in try/except — single-symbol failure must never crash the loop
 - **Log at INFO level** for each phase: perception → council → risk → execute
-- **Log at ERROR level** for API failures, then return safe default (empty string for Skills, 0.0 for prices)
+- **Log at ERROR level** for API failures, then return safe defaults (`50` for unavailable signals, `0.0` for unavailable prices)
 
 ## Audit Trail & Evidence
 
 **Critical for hackathon submission**:
 
-- `logs/decisions.csv` must have 20+ rows spanning multiple hours before submission (proof of autonomous operation)
-- Each row captures: timestamp, symbol, all five skill scores, confidence, decision, action, portfolio balance, total PnL, win rate
-- `logs/cycles/*.json` stores full cycle data including raw Skill outputs (auditable proof)
+- `trades.csv` must have 20+ rows spanning multiple hours before submission (proof of autonomous operation)
+- Each row captures: timestamp, symbol, confidence, decision, action, size, price, quantity, balance change, rank, action distance, portfolio balance, cumulative PnL, per-trade PnL, and explanation text containing all five analyst scores
+- Automatic SL/TP exits are logged as `CLOSE` rows so dashboard win rate and CSV history use the same source of truth
 
 The CSV is committed to GitHub and judges must be able to verify results.
 
@@ -125,7 +130,7 @@ Run `python sentinel.py --test` to validate keyword scoring against 6 test cases
 - Bullish macro (Fed easing, DXY softening, ETF inflows)
 - Bearish technical (death cross, distribution, RSI low)
 - Neutral sentiment (Fear & Greed at 51, balanced funding)
-- Self-scored news (contains SIGNAL_SCORE: 58)
+- Self-scored news (contains SIGNAL_SCORE: 72)
 - Bullish market intel (whale accumulation, ETF inflows)
 - Empty input (defaults to neutral 50)
 

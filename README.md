@@ -16,10 +16,10 @@ Every hour, Sentinel Council runs a full intelligence cycle across **6 symbols**
 |---|---|
 | **Perception** | Five signal functions query real Bitget futures data (ticker, candles, funding rate, open interest) and the Alternative.me Fear & Greed API, producing a score (0–100) per analyst per symbol |
 | **Council** | A weighted confidence score combines all five: Macro 30% · Technical 30% · Sentiment 20% · News 10% · Intel 10% |
-| **Decision** | ≥ 58 → BUY · ≤ 42 → SELL · otherwise → HOLD |
-| **Risk** | Position size: 1% of balance (confidence 58–84) or 2% (≥ 85). Max 1 position per symbol, max 6 concurrent. Stop-loss −2%, take-profit +5% enforced each cycle |
-| **Execution** | `SimPortfolio` opens/closes simulated positions using real Bitget prices. Balance starts at $10,000 USDT |
-| **Audit** | Every decision appended to `trades.csv` — timestamp, symbol, decision, confidence, action, size, balance, PnL, full explanation |
+| **Decision** | ≥ 72 → BUY · ≤ 28 → SELL · 60–71 / 29–40 → WATCH · 41–59 → WAIT. Assets are ranked by nearest action threshold and the top opportunity is flagged every cycle |
+| **Risk** | Position size: 1% of balance for BUY scores 72–74 or 2% for 75+. WATCH/WAIT never open new positions. Max 1 position per symbol, max 6 concurrent. Stop-loss −2%, take-profit +5% enforced each cycle with same-cycle re-entry blocked after automatic exits |
+| **Execution** | `SimPortfolio` opens/closes simulated positions using real Bitget prices with per-symbol sanity bounds. Balance starts at $10,000 USDT |
+| **Audit** | Every decision and automatic SL/TP exit is written to `trades.csv` — timestamp, pair, direction, price, quantity, balance change, rank, action distance, balance, PnL, and full explanation |
 
 ---
 
@@ -27,11 +27,11 @@ Every hour, Sentinel Council runs a full intelligence cycle across **6 symbols**
 
 | Analyst | Weight | Data source | What it measures |
 |---|---|---|---|
-| **Macro** | 30% | Bitget MCP — `futures_get_ticker` (BTCUSDT) | BTC 24h momentum + funding rate as shared crypto regime signal |
-| **Technical** | 30% | Bitget MCP — `futures_get_candles` (50 × 1h) | EMA9/EMA21 trend gap + RSI(14) contrarian score |
+| **Macro** | 30% | Bitget REST — `/api/v2/mix/market/ticker` across peer symbols | Peer-basket 24h momentum + funding rate, excluding the target symbol |
+| **Technical** | 30% | Bitget REST — `/api/v2/mix/market/candles` (50 × 1h) | EMA9/EMA21 trend gap + RSI(14) contrarian score |
 | **Sentiment** | 20% | Alternative.me Fear & Greed API + Bitget per-symbol funding rate | Contrarian F&G scoring (extreme fear = buy signal) + funding pressure |
 | **News** | 10% | CoinTelegraph · CoinDesk · Decrypt · CryptoBriefing (RSS) | Per-symbol keyword filtering → bullish/bearish ratio across live headlines |
-| **Intel** | 10% | Bitget MCP — `futures_get_ticker` + `futures_get_open_interest` | Per-symbol 24h price delta + OI change as institutional flow confirmation |
+| **Intel** | 10% | Bitget REST — ticker + open interest endpoints | Per-symbol 24h price delta + OI change as institutional flow confirmation |
 
 All scores are computed with pure numeric math — no external LLM calls, no keyword normalizer in the live path.
 
@@ -39,8 +39,8 @@ All scores are computed with pure numeric math — no external LLM calls, no key
 
 ## Bitget modules used
 
-- **Bitget MCP Server** (`npx -y bitget-mcp-server`) — `futures_get_ticker`, `futures_get_candles`, `futures_get_funding_rate`, `futures_get_open_interest`
-- **Bitget REST API** — `GET /api/v2/mix/market/ticker` (real-time price feed for portfolio execution and dashboard)
+- **Bitget MCP Server** (`npx -y bitget-mcp-server@1.1.0`) — initialized for Agent Hub compatibility
+- **Bitget REST API** — market ticker, candles, funding rate, and open interest for live perception and portfolio execution. The backend includes a DNS-safe REST fallback for environments where the MCP server cannot resolve `api.bitget.com`
 
 ---
 
@@ -56,7 +56,7 @@ Mission Control dark-theme Streamlit dashboard — auto-refreshes every 10 secon
 | **Open positions monitor** | Live unrealized PnL per position with entry price, current price, SL/TP levels |
 | **Signal intelligence matrix** | 6×5 color-coded heatmap — every symbol vs every analyst score at a glance |
 | **Current signals** | Per-symbol confidence gauge, decision, dominant analyst, score bars |
-| **Decision timeline** | Scatter plot of every BUY/SELL/HOLD decision per symbol over time |
+| **Decision timeline** | Scatter plot of every BUY/SELL/WATCH/WAIT decision per symbol over time |
 | **Skill breakdown** | Per-analyst score bars + summary text, tabbed by symbol |
 | **Confidence trend** | Multi-line chart with BUY/SELL threshold markers for all 6 symbols |
 | **Decision log** | Full 25-row audit trail with CSV download |
@@ -82,7 +82,7 @@ Mission Control dark-theme Streamlit dashboard — auto-refreshes every 10 secon
 │       └───────────┴─────────────┘                  │
 │                   │                                 │
 │  COUNCIL ENGINE ──┤ weighted confidence 0–100       │
-│                   │ BUY ≥58 · SELL ≤42 · HOLD       │
+│                   │ BUY ≥72 · SELL ≤28 · WATCH/WAIT │
 │                   │                                 │
 │  RISK ENGINE ─────┤ 1–2% of balance per position   │
 │                   │ SL −2% · TP +5%                │
@@ -106,7 +106,7 @@ pip install -r requirements.txt
 Requires Node.js for the Bitget MCP server:
 
 ```bash
-npx -y bitget-mcp-server   # downloads automatically on first run
+npx -y bitget-mcp-server@1.1.0   # pinned package used by sentinel.py
 ```
 
 ---
@@ -157,7 +157,7 @@ sentinel-council/
 ├── sentinel.py          # Agent: all five phases + hourly loop
 ├── dashboard.py         # Streamlit Mission Control dashboard
 ├── requirements.txt     # Python dependencies
-├── trades.csv           # Audit trail (committed as evidence)
+├── trades.csv           # Generated audit trail (upload/share as evidence)
 ├── .env                 # Credentials (never committed)
 ├── logs/
 │   └── sentinel.log     # Runtime log
