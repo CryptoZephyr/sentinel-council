@@ -232,6 +232,46 @@ div[data-testid="stDownloadButton"] > button:hover { color:#00ff87 !important;bo
     .hiw-flow { flex-direction:column; }
     .hiw-arrow { transform:rotate(90deg); }
 }
+
+/* ── Cycle State Banner ── */
+.cycle-banner { display:flex;align-items:center;justify-content:space-between;background:#0a1218;border:1px solid rgba(0,255,135,0.12);border-radius:4px;padding:1rem 1.5rem;margin-bottom:0.8rem;position:relative;overflow:hidden; }
+.cycle-banner::before { content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(0,255,135,.35),transparent); }
+.cycle-status { display:flex;align-items:center;gap:0.8rem; }
+.cycle-status-badge { font-family:'Share Tech Mono',monospace !important;font-size:0.62rem;letter-spacing:0.18em;padding:0.3rem 0.8rem;border-radius:2px;font-weight:600; }
+.badge-execution { background:rgba(0,255,135,0.15);color:#00ff87;border:1px solid rgba(0,255,135,0.3); }
+.badge-watch { background:rgba(245,166,35,0.12);color:#f5a623;border:1px solid rgba(245,166,35,0.25); }
+.badge-low { background:rgba(42,61,82,0.2);color:#3d5166;border:1px solid rgba(42,61,82,0.4); }
+.cycle-status-desc { font-family:'DM Sans',sans-serif !important;font-size:0.72rem;color:#3d5166; }
+.cycle-top-opp { text-align:right; }
+.cycle-top-label { font-family:'Share Tech Mono',monospace !important;font-size:0.48rem;color:#2a3d52;letter-spacing:0.22em; }
+.cycle-top-sym { font-family:'Chakra Petch',monospace !important;font-size:1.15rem;font-weight:700;letter-spacing:0.1em; }
+.cycle-top-dist { font-family:'Share Tech Mono',monospace !important;font-size:0.58rem;margin-top:0.12rem; }
+
+/* ── System Message Panel ── */
+.sys-panel { background:#0a1218;border:1px solid rgba(0,255,135,0.06);border-radius:3px;padding:0.85rem 1.3rem;margin-bottom:1.5rem;display:grid;grid-template-columns:1fr 1fr 1fr;gap:1rem; }
+.sys-item-label { font-family:'Share Tech Mono',monospace !important;font-size:0.48rem;color:#2a3d52;letter-spacing:0.2em;margin-bottom:0.25rem; }
+.sys-item-text { font-family:'DM Sans',sans-serif !important;font-size:0.72rem;color:#5e7a94;line-height:1.4; }
+
+/* ── Top Opportunity Highlight ── */
+.council-card.top-opp { border-color:rgba(0,255,135,0.3) !important;background:linear-gradient(135deg,#0d1520,#0f1a24) !important;box-shadow:0 0 24px rgba(0,255,135,0.05),inset 0 0 40px rgba(0,255,135,0.015); }
+.council-card.top-opp::after { background:linear-gradient(90deg,transparent,rgba(0,255,135,.55),transparent) !important; }
+.top-opp-badge { font-family:'Share Tech Mono',monospace !important;font-size:0.48rem;color:#00ff87;letter-spacing:0.22em;text-align:center;margin-bottom:0.25rem;opacity:0.85; }
+
+/* ── Rank Badge ── */
+.rank-badge { font-family:'Chakra Petch',monospace !important;font-size:0.55rem;color:#2a3d52;letter-spacing:0.06em; }
+.rank-num { font-size:0.65rem;color:#3d5166;font-weight:600; }
+
+/* ── Direction Indicators ── */
+.dir-toward-buy { color:rgba(0,255,135,0.55) !important; }
+.dir-toward-sell { color:rgba(255,77,77,0.55) !important; }
+.dir-neutral { color:#2a3d52 !important; }
+.dir-line { font-family:'Share Tech Mono',monospace !important;font-size:0.5rem;letter-spacing:0.06em;text-align:center;margin-top:0.15rem; }
+
+@media (max-width: 768px) {
+    .cycle-banner { flex-direction:column;align-items:flex-start;gap:.6rem; }
+    .cycle-top-opp { text-align:left; }
+    .sys-panel { grid-template-columns:1fr; }
+}
 </style>
 """
 
@@ -312,25 +352,32 @@ def load_cycle_status() -> dict:
         return {}
 
 
-def next_cycle_countdown(df: pd.DataFrame | None) -> tuple[str, bool]:
+def next_cycle_countdown(df: pd.DataFrame | None) -> tuple[str, str, str]:
+    """Returns (label, value, color) for the cycle timing display."""
     status = load_cycle_status()
     if status.get("status") == "running":
-        return "RUNNING", True
+        return "CYCLE", "ANALYZING NOW", "#00ff87"
     try:
         ts_str = status.get("ts") or (df["timestamp"].max() if df is not None else None)
         if not ts_str:
-            return "—", False
+            return "LAST CYCLE", "NO DATA", "#2a3d52"
         last_ts = pd.to_datetime(ts_str)
         if last_ts.tzinfo is None:
             last_ts = last_ts.tz_localize("UTC")
-        remaining = (last_ts + pd.Timedelta(seconds=CYCLE_SECONDS) -
-                     datetime.now(timezone.utc)).total_seconds()
-        if remaining <= 0:
-            return "DUE", False
-        m, s = int(remaining // 60), int(remaining % 60)
-        return f"{m:02d}:{s:02d}", False
+        elapsed = (datetime.now(timezone.utc) - last_ts).total_seconds()
+        remaining = CYCLE_SECONDS - elapsed
+        if remaining > 0:
+            m, s = int(remaining // 60), int(remaining % 60)
+            return "NEXT CYCLE IN", f"{m:02d}:{s:02d}", "#f5a623"
+        # Overdue — show how long ago
+        ago = abs(elapsed)
+        if ago < 120:
+            return "LAST CYCLE", f"{int(ago)}S AGO", "#2a3d52"
+        if ago < 7200:
+            return "LAST CYCLE", f"{int(ago // 60)}M AGO", "#2a3d52"
+        return "LAST CYCLE", f"{ago / 3600:.1f}H AGO", "#2a3d52"
     except Exception:
-        return "—", False
+        return "LAST CYCLE", "UNKNOWN", "#2a3d52"
 
 
 _CG_IDS = {
@@ -341,6 +388,57 @@ _CG_IDS = {
     "AVAXUSDT": "avalanche-2",
     "DOGEUSDT": "dogecoin",
 }
+
+
+def load_latest_cycle(df: pd.DataFrame) -> list[dict]:
+    """Extract the latest multi-symbol analysis cycle, ordered by backend rank."""
+    required = {"rank", "distance_to_action", "direction", "top_opportunity"}
+    if not required.issubset(df.columns):
+        return []
+    valid = df[df["rank"] > 0].sort_values("timestamp", ascending=False)
+    if valid.empty:
+        return []
+    checked: set[float] = set()
+    for _, row in valid.head(40).iterrows():
+        ts = row["timestamp"]
+        key = ts.timestamp()
+        if any(abs(key - k) < 5 for k in checked):
+            continue
+        checked.add(key)
+        batch = valid[abs((valid["timestamp"] - ts).dt.total_seconds()) < 30]
+        if batch["symbol"].nunique() >= 3:
+            cycle = batch.drop_duplicates("symbol", keep="first").sort_values("rank")
+            return [_cycle_row(r) for _, r in cycle.iterrows()]
+    return []
+
+
+def _cycle_row(r: pd.Series) -> dict:
+    sym = str(r["symbol"])
+    return {
+        "symbol": sym,
+        "label": SYM_LABELS.get(sym, sym),
+        "confidence": float(r.get("confidence", 0)),
+        "decision": str(r.get("decision", "WAIT")),
+        "action": str(r.get("action", "")),
+        "distance": float(r.get("distance_to_action", 0)),
+        "direction": str(r.get("direction", "neutral")),
+        "rank": int(r.get("rank", 0)),
+        "top_opportunity": str(r.get("top_opportunity", False)).strip().lower() == "true",
+        "explanation": str(r.get("explanation", "")),
+    }
+
+
+def determine_system_status(cycle: list[dict]) -> tuple[str, str, str]:
+    """Returns (status_label, badge_css_class, description)."""
+    if not cycle:
+        return "OFFLINE", "badge-low", "Awaiting first cycle"
+    actions = {c["action"] for c in cycle}
+    decisions = {c["decision"] for c in cycle}
+    if actions & {"OPEN_LONG", "OPEN_SHORT"}:
+        return "ACTIVE EXECUTION", "badge-execution", "Executing trades this cycle"
+    if "WATCH" in decisions:
+        return "ACTIVE WATCH", "badge-watch", "Assets approaching action thresholds"
+    return "LOW CONVICTION", "badge-low", "No actionable signals detected"
 
 
 @st.cache_data(ttl=300)
@@ -600,9 +698,7 @@ st.markdown(CSS, unsafe_allow_html=True)
 
 df = load_trades()
 now_utc = datetime.now(timezone.utc).strftime("%Y-%m-%d  %H:%M UTC")
-countdown, is_running = next_cycle_countdown(df)
-cycle_label = "CYCLE STATUS" if is_running else "NEXT CYCLE"
-countdown_color = "#00ff87" if is_running else "#f5a623"
+cycle_label, cycle_value, cycle_color = next_cycle_countdown(df)
 
 st.markdown(f"""
 <div class="sc-masthead">
@@ -613,7 +709,7 @@ st.markdown(f"""
     <div class="sc-live-block">
         <div class="sc-live"><span class="pulse-dot"></span> LIVE</div>
         <div class="sc-clock">{now_utc}</div>
-        <div class="sc-countdown" style="color:{countdown_color}">{cycle_label} &nbsp;{countdown}</div>
+        <div class="sc-countdown" style="color:{cycle_color}">{cycle_label} &nbsp;{cycle_value}</div>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -688,6 +784,78 @@ if df is None:
     </div>
     """, unsafe_allow_html=True)
 else:
+    # ── Load Latest Cycle Data ────────────────────────────────────
+    cycle_data = load_latest_cycle(df)
+    cycle_map = {c["symbol"]: c for c in cycle_data}
+    ranked_symbols = [c["symbol"] for c in cycle_data]
+    for _s in SYMBOLS:
+        if _s not in ranked_symbols:
+            ranked_symbols.append(_s)
+    status_label, status_badge, status_desc = determine_system_status(cycle_data)
+    top_opp = next((c for c in cycle_data if c["top_opportunity"]), None)
+
+    # ── Cycle State Banner ────────────────────────────────────────
+    top_opp_html = ""
+    if top_opp:
+        _dir_arrow = {"toward_buy": "↗", "toward_sell": "↘"}.get(top_opp["direction"], "→")
+        _dir_color = {"toward_buy": "#00ff87", "toward_sell": "#ff4d4d"}.get(top_opp["direction"], "#2a3d52")
+        _dec_color = decision_color(top_opp["decision"])
+        top_opp_html = (
+            f'<div class="cycle-top-opp">'
+            f'<div class="cycle-top-label">◎ TOP OPPORTUNITY</div>'
+            f'<div class="cycle-top-sym" style="color:{_dec_color}">{top_opp["label"]}</div>'
+            f'<div class="cycle-top-dist" style="color:{_dir_color}">'
+            f'{_dir_arrow} {top_opp["distance"]:.1f} pts &middot; {top_opp["direction"].replace("_", " ").upper()}</div>'
+            f'</div>'
+        )
+
+    st.markdown(
+        f'<div class="cycle-banner">'
+        f'<div class="cycle-status">'
+        f'<span class="cycle-status-badge {status_badge}">{status_label}</span>'
+        f'<span class="cycle-status-desc">{status_desc}</span>'
+        f'</div>'
+        f'{top_opp_html}'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
+    # ── System Message Panel ──────────────────────────────────────
+    _watch_n = sum(1 for c in cycle_data if c["decision"] == "WATCH")
+    _wait_n = sum(1 for c in cycle_data if c["decision"] == "WAIT")
+    _buy_n = sum(1 for c in cycle_data if c["decision"] == "BUY")
+    _sell_n = sum(1 for c in cycle_data if c["decision"] == "SELL")
+    _parts: list[str] = []
+    if _buy_n:
+        _parts.append(f'<span style="color:#00ff87">{_buy_n} BUY</span>')
+    if _sell_n:
+        _parts.append(f'<span style="color:#ff4d4d">{_sell_n} SELL</span>')
+    if _watch_n:
+        _parts.append(f'<span style="color:#f5a623">{_watch_n} WATCH</span>')
+    if _wait_n:
+        _parts.append(f'<span style="color:#3d5166">{_wait_n} WAIT</span>')
+    _summary = " &middot; ".join(_parts) if _parts else "No data"
+
+    _has_exec = any(c["action"] in ("OPEN_LONG", "OPEN_SHORT") for c in cycle_data)
+    _exec_text = "Trades executed this cycle" if _has_exec else "No executions in current cycle"
+    _exec_color = "#00ff87" if _has_exec else "#3d5166"
+
+    _top_headline = ""
+    if top_opp:
+        _top_headline = html.escape(top_opp["explanation"].split("\n")[0].strip()[:140])
+
+    st.markdown(
+        f'<div class="sys-panel">'
+        f'<div><div class="sys-item-label">CYCLE DECISIONS</div>'
+        f'<div class="sys-item-text">{_summary}</div></div>'
+        f'<div><div class="sys-item-label">EXECUTION STATUS</div>'
+        f'<div class="sys-item-text" style="color:{_exec_color}">{_exec_text}</div></div>'
+        f'<div><div class="sys-item-label">TOP SIGNAL</div>'
+        f'<div class="sys-item-text">{_top_headline if _top_headline else "—"}</div></div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
+
     # ── Portfolio Metrics ──────────────────────────────────────────
     st.markdown('<div class="sc-section">PORTFOLIO STATUS</div>', unsafe_allow_html=True)
 
@@ -718,12 +886,17 @@ else:
     """, unsafe_allow_html=True)
 
     # ── THE COUNCIL — Pentagon Radar Charts ───────────────────────
-    st.markdown('<div class="sc-section">THE COUNCIL — ANALYST VOTES BY SYMBOL</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sc-section">THE COUNCIL — RANKED MARKET VIEW</div>', unsafe_allow_html=True)
 
     council_cards = ""
-    for sym in SYMBOLS:
+    for sym in ranked_symbols:
         label = SYM_LABELS.get(sym, sym)
         sym_df = df[df["symbol"] == sym].sort_values("timestamp")
+        _cd = cycle_map.get(sym, {})
+        _is_top = _cd.get("top_opportunity", False) if _cd else False
+        _card_rank = _cd.get("rank", 0) if _cd else 0
+        _card_dist = _cd.get("distance", 0) if _cd else 0
+        _card_dir = _cd.get("direction", "neutral") if _cd else "neutral"
 
         if sym_df.empty:
             council_cards += f"""
@@ -733,11 +906,19 @@ else:
             </div>"""
             continue
 
-        latest = sym_df.iloc[-1]
-        _, skill_rows = parse_explanation(str(latest.get("explanation", "")))
+        # Prefer cycle analysis row over CLOSE/manual rows
+        if sym in cycle_map:
+            _ce = cycle_map[sym]
+            confidence = _ce["confidence"]
+            decision = _ce["decision"]
+            _, skill_rows = parse_explanation(_ce["explanation"])
+        else:
+            _analysis = sym_df[sym_df.get("action", pd.Series(dtype=str)) != "CLOSE"]
+            latest = _analysis.iloc[-1] if not _analysis.empty else sym_df.iloc[-1]
+            confidence = float(latest.get("confidence", 0))
+            decision = str(latest.get("decision", "WAIT"))
+            _, skill_rows = parse_explanation(str(latest.get("explanation", "")))
         score_map = {r["skill"]: r["score"] for r in skill_rows}
-        confidence = float(latest.get("confidence", 0))
-        decision = str(latest.get("decision", "WAIT"))
         conf_color = score_color(int(confidence))
         prox_text, prox_color = threshold_proximity(confidence, decision)
 
@@ -745,7 +926,8 @@ else:
         tbar = threshold_bar_svg(confidence, decision)
 
         # Get dominant analyst insight
-        dom = dominant_skill(str(latest.get("explanation", "")))
+        _expl_text = cycle_map[sym]["explanation"] if sym in cycle_map else str(sym_df.iloc[-1].get("explanation", ""))
+        dom = dominant_skill(_expl_text)
         dom_insight = ""
         for r in skill_rows:
             if r["skill"].upper() == dom and r["summary"] and r["summary"] != "No data":
@@ -757,18 +939,32 @@ else:
                     dom_insight = r["summary"][:90]
                     break
 
-        council_cards += f"""
-        <div class="council-card">
-            <div class="council-sym">{label} / USDT</div>
-            <div class="council-radar">{radar}</div>
-            <div style="display:flex;justify-content:center;margin:0.1rem 0 0.2rem">{tbar}</div>
-            <div class="council-verdict">
-                <span class="council-decision {decision_card_cls(decision)}">{decision}</span>
-                <span class="council-conf" style="color:{conf_color}">{confidence:.1f}%</span>
-            </div>
-            <div class="council-proximity" style="color:{prox_color}">{prox_text}</div>
-            {'<div class="council-insight">' + html.escape(dom_insight) + '</div>' if dom_insight else ''}
-        </div>"""
+        _top_cls = " top-opp" if _is_top else ""
+        _top_badge = '<div class="top-opp-badge">◎ CLOSEST TO EXECUTION THRESHOLD</div>' if _is_top else ""
+        _rank_html = f'<span class="rank-badge">#<span class="rank-num">{_card_rank}</span></span> ' if _card_rank > 0 else ""
+        _da = {"toward_buy": "↗", "toward_sell": "↘"}.get(_card_dir, "→")
+        _dc = {"toward_buy": "dir-toward-buy", "toward_sell": "dir-toward-sell"}.get(_card_dir, "dir-neutral")
+        _dir_html = (
+            f'<div class="dir-line {_dc}">{_da} {_card_dist:.1f} PTS &middot; '
+            f'{_card_dir.replace("_", " ").upper()}</div>'
+        ) if _card_rank > 0 else ""
+
+        _insight_html = f'<div class="council-insight">{html.escape(dom_insight)}</div>' if dom_insight else ""
+        council_cards += (
+            f'<div class="council-card{_top_cls}">'
+            f'{_top_badge}'
+            f'<div class="council-sym">{_rank_html}{label} / USDT</div>'
+            f'<div class="council-radar">{radar}</div>'
+            f'<div style="display:flex;justify-content:center;margin:0.1rem 0 0.2rem">{tbar}</div>'
+            f'<div class="council-verdict">'
+            f'<span class="council-decision {decision_card_cls(decision)}">{decision}</span>'
+            f'<span class="council-conf" style="color:{conf_color}">{confidence:.1f}%</span>'
+            f'</div>'
+            f'<div class="council-proximity" style="color:{prox_color}">{prox_text}</div>'
+            f'{_dir_html}'
+            f'{_insight_html}'
+            f'</div>'
+        )
 
     st.markdown(f'<div class="council-grid">{council_cards}</div>', unsafe_allow_html=True)
 
@@ -794,31 +990,48 @@ else:
         for a in _ANALYSTS
     )
     matrix_header = (
-        f'<tr><th class="matrix-th matrix-th-left">SYMBOL</th>'
+        f'<tr><th class="matrix-th matrix-th-left">#</th>'
+        f'<th class="matrix-th matrix-th-left">SYMBOL</th>'
         f'{header_cells}'
         f'<th class="matrix-th">CONF</th>'
-        f'<th class="matrix-th">DECISION</th></tr>'
+        f'<th class="matrix-th">DECISION</th>'
+        f'<th class="matrix-th">DIST</th></tr>'
     )
 
     matrix_rows = ""
-    for sym in SYMBOLS:
+    for sym in ranked_symbols:
         sym_df = df[df["symbol"] == sym].sort_values("timestamp")
         label = SYM_LABELS.get(sym, sym)
+        _mr = cycle_map.get(sym, {}).get("rank", 0) if cycle_data else 0
+        _rank_cell = f'<td class="matrix-sym" style="color:#3d5166;font-size:.65rem">{_mr}</td>' if _mr > 0 else '<td class="matrix-sym" style="color:#1a2a38">—</td>'
+        _md = cycle_map.get(sym, {})
+        _m_dist = _md.get("distance", 0) if _md else 0
+        _m_dir = _md.get("direction", "neutral") if _md else "neutral"
+        _m_dir_c = {"toward_buy": "rgba(0,255,135,0.5)", "toward_sell": "rgba(255,77,77,0.5)"}.get(_m_dir, "#2a3d52")
+
         if sym_df.empty:
             empty = '<td class="matrix-cell" style="background:rgba(255,255,255,0.02);color:#1a2a38">—</td>'
             matrix_rows += (
-                f'<tr><td class="matrix-sym">{label}</td>'
+                f'<tr>{_rank_cell}<td class="matrix-sym">{label}</td>'
                 f'{"".join(empty for _ in _ANALYSTS)}'
                 f'<td class="matrix-conf" style="background:rgba(255,255,255,0.02);color:#1a2a38">—</td>'
-                f'<td class="matrix-dec" style="color:#1a2a38">—</td></tr>'
+                f'<td class="matrix-dec" style="color:#1a2a38">—</td>'
+                f'<td class="matrix-cell" style="color:#1a2a38">—</td></tr>'
             )
             continue
 
-        latest = sym_df.iloc[-1]
-        _, skill_rows = parse_explanation(str(latest.get("explanation", "")))
+        if sym in cycle_map:
+            _ce2 = cycle_map[sym]
+            confidence = _ce2["confidence"]
+            decision = _ce2["decision"]
+            _, skill_rows = parse_explanation(_ce2["explanation"])
+        else:
+            _analysis2 = sym_df[sym_df.get("action", pd.Series(dtype=str)) != "CLOSE"]
+            latest = _analysis2.iloc[-1] if not _analysis2.empty else sym_df.iloc[-1]
+            confidence = float(latest.get("confidence", 0))
+            decision = str(latest.get("decision", "WAIT"))
+            _, skill_rows = parse_explanation(str(latest.get("explanation", "")))
         score_map = {r["skill"]: r["score"] for r in skill_rows}
-        confidence = float(latest.get("confidence", 0))
-        decision = str(latest.get("decision", "WAIT"))
         dec_color = decision_color(decision)
         if dec_color == "#2a3d52":
             dec_color = "#5e7a94"
@@ -828,11 +1041,13 @@ else:
             f'{score_map.get(a, "—")}</td>'
             for a in _ANALYSTS
         )
+        _dist_txt = f'{_m_dist:.1f}' if _mr > 0 else "—"
         matrix_rows += (
-            f'<tr><td class="matrix-sym">{label}</td>'
+            f'<tr>{_rank_cell}<td class="matrix-sym">{label}</td>'
             f'{analyst_cells}'
             f'<td class="matrix-conf" style="{_conf_style(decision)}">{confidence:.0f}</td>'
-            f'<td class="matrix-dec" style="color:{dec_color}">{decision}</td></tr>'
+            f'<td class="matrix-dec" style="color:{dec_color}">{decision}</td>'
+            f'<td class="matrix-cell" style="color:{_m_dir_c}">{_dist_txt}</td></tr>'
         )
 
     st.markdown(
@@ -1054,10 +1269,17 @@ else:
                 )
                 continue
 
-            latest = sym_df.iloc[-1]
-            headline, skill_rows = parse_explanation(str(latest.get("explanation", "")))
-            decision = str(latest.get("decision", "WAIT"))
-            confidence = float(latest.get("confidence", 0))
+            if symbol in cycle_map:
+                _ce3 = cycle_map[symbol]
+                confidence = _ce3["confidence"]
+                decision = _ce3["decision"]
+                headline, skill_rows = parse_explanation(_ce3["explanation"])
+            else:
+                _analysis3 = sym_df[sym_df.get("action", pd.Series(dtype=str)) != "CLOSE"]
+                latest = _analysis3.iloc[-1] if not _analysis3.empty else sym_df.iloc[-1]
+                headline, skill_rows = parse_explanation(str(latest.get("explanation", "")))
+                decision = str(latest.get("decision", "WAIT"))
+                confidence = float(latest.get("confidence", 0))
             conf_color = score_color(int(confidence))
 
             st.markdown(f"""
