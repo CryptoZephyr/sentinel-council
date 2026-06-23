@@ -48,6 +48,14 @@ All scores are computed with pure numeric math — no external LLM calls, no key
 
 Mission Control dark-theme Streamlit dashboard — auto-refreshes every 10 seconds.
 
+The hosted dashboard is read-only. It renders the latest committed GitHub state and does not maintain a live streaming connection to the local trading engine.
+
+```
+local agent -> trades.csv -> git push -> Streamlit dashboard render
+```
+
+When `sentinel.py` runs locally, new decisions are appended to the local `trades.csv`. The public dashboard updates only after those audit rows are committed and pushed to the repository.
+
 | Section | What it shows |
 |---|---|
 | **Live price strip** | All 6 pairs with real-time prices + 24h % change |
